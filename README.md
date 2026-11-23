@@ -13,6 +13,7 @@
 [![Grafana](https://img.shields.io/badge/Grafana-Prometheus_OpenMetrics-F46800.svg?style=for-the-badge&logo=grafana&logoColor=white)](https://grafana.com)
 [![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL_Cloud-3ECF8E.svg?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com)
 [![Swagger](https://img.shields.io/badge/Swagger-OpenAPI_3.1-85EA2D.svg?style=for-the-badge&logo=swagger&logoColor=black)](https://ocr-project-puce.vercel.app/docs)
+[![Demo Video](https://img.shields.io/badge/Demo_Video-720p_HD-FF0000.svg?style=for-the-badge&logo=youtube&logoColor=white)](#-end-to-end-system-walkthrough-video-demo)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![UI Style](https://img.shields.io/badge/Design-Apple_Dark_Minimalist-000000.svg?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/Sifatkhan-1915020/CGO-V1.0)
 
@@ -28,6 +29,7 @@
 </p>
 
 <p align="center">
+  <a href="#-end-to-end-system-walkthrough-video-demo"><b>🎬 Video Demo</b></a> •
   <a href="#-interactive-ui-gallery--screenshot-walkthrough"><b>📸 UI Screenshot Gallery</b></a> •
   <a href="#-system-architecture--functional-flows"><b>🏛️ System Architecture Flows</b></a> •
   <a href="#-how-to-use-the-whole-system-complete-manual"><b>📖 Operator Manual</b></a> •
@@ -37,6 +39,38 @@
 </p>
 
 </div>
+
+---
+
+## 🎬 End-to-End System Walkthrough (Video Demo)
+
+Watch the complete autonomous document extraction lifecycle, live extraction telemetry, Task 3 mathematical invoice audit shield, in-app API key generation, and interactive Swagger UI portal in action:
+
+<div align="center">
+
+<video src="docs/demo/careguide_demo_walkthrough.mp4" controls width="95%" poster="docs/demo/thumbnail.jpg" style="max-width: 900px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 12px 35px rgba(0,0,0,0.85);">
+  <a href="docs/demo/careguide_demo_walkthrough.mp4">
+    <img src="docs/demo/thumbnail.jpg" alt="CareGuide Demo Walkthrough Video" width="95%" style="max-width: 900px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.15);" />
+  </a>
+</video>
+
+<br/><br/>
+
+<p align="center">
+  <a href="docs/demo/careguide_demo_walkthrough.mp4">
+    <img src="https://img.shields.io/badge/▶%20Watch%20/%20Download%20Demo%20Video-careguide__demo__walkthrough.mp4-0066FF?style=for-the-badge&logo=quicktime&logoColor=white" alt="Watch Demo Video" />
+  </a>
+  &nbsp;
+  <a href="https://ocr-project-puce.vercel.app/docs">
+    <img src="https://img.shields.io/badge/Interactive%20Swagger-Live%20API%20Portal-85EA2D?style=for-the-badge&logo=swagger&logoColor=black" alt="Live Swagger UI" />
+  </a>
+</p>
+
+*Recorded in 720p HD (H.264 / 25 FPS) — covering Landing Page, Administrator Authentication, Batch Ingestion, Real-Time Telemetry Logs, Task 3 Audit Shield, In-App API Key Generation, and Swagger UI execution.*
+
+</div>
+
+<br/>
 
 ---
 
