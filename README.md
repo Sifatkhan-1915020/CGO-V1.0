@@ -1,7 +1,10 @@
 <div align="center">
 
 # ⚡ CG-OCR Enterprise
-### Intelligent Multi-Format Document Ingestion, Cryptographic Security & Telemetry Engine
+### Autonomous Document, Spreadsheet & Invoice Intelligence Engine
+#### High-Throughput Dual-Routing • Zero-Trust Anti-Bot Security • Redis & Grafana Telemetry
+
+<br/>
 
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688.svg?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![React](https://img.shields.io/badge/React-18.0+-61DAFB.svg?style=for-the-badge&logo=react&logoColor=black)](https://reactjs.org/)
@@ -10,7 +13,7 @@
 [![Grafana](https://img.shields.io/badge/Grafana-Prometheus_OpenMetrics-F46800.svg?style=for-the-badge&logo=grafana&logoColor=white)](https://grafana.com)
 [![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL_Cloud-3ECF8E.svg?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
-[![UI Style](https://img.shields.io/badge/Design-Apple_Minimalist-000000.svg?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/Sifatkhan-1915020/CareGuide-OCR)
+[![UI Style](https://img.shields.io/badge/Design-Apple_Dark_Minimalist-000000.svg?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/Sifatkhan-1915020/OCR-Project)
 
 <br/>
 
@@ -20,65 +23,96 @@
 <br/>
 
 <p align="center">
-  <b>CG-OCR</b> is a production-grade, memory-bounded document processing engine built for massive scale (up to 1,000-page PDFs and 1,000 images per session). It couples deterministic sub-15ms digital extraction with <b>Baidu/Unlimited-OCR (Kaggle/Colab GPU acceleration)</b>, <b>Gemini Vision AI packet fallback for complex Bengali (বাংলা) typography</b>, enterprise <b>Anti-Bot OTP Guard security</b>, <b>Redis cache fast-buffers</b>, and <b>Prometheus/Grafana live observability</b>.
+  <b>CG-OCR</b> is an enterprise-grade, memory-bounded document, spreadsheet, and invoice processing system built for high throughput. It couples deterministic sub-15ms digital triage (0 token cost) with <b>Baidu/Unlimited-OCR GPU acceleration</b>, <b>Gemini Vision AI fallback for complex tabular and multilingual typography</b>, zero-trust <b>Anti-Bot OTP Guard security</b>, <b>Redis 7.2 fast-buffers</b>, and <b>Prometheus/Grafana live observability</b>.
 </p>
 
-[Visual UI Gallery](#-visual-interface-gallery--screenshot-walkthrough) • [Functional Flows](#-system-architecture--functional-flows) • [How to Use the System](#-how-to-use-the-whole-system-complete-manual) • [Security Blueprint](#-security-capabilities--threat-protection) • [Grafana Telemetry](#-redis-telemetry--grafana-observability) • [API Reference](#-api-endpoints-reference)
+<p align="center">
+  <a href="#-interactive-ui-gallery--screenshot-walkthrough"><b>📸 UI Screenshot Gallery</b></a> •
+  <a href="#-system-architecture--functional-flows"><b>🏛️ System Architecture Flows</b></a> •
+  <a href="#-how-to-use-the-whole-system-complete-manual"><b>📖 Operator Manual</b></a> •
+  <a href="#-security-capabilities--threat-protection"><b>🛡️ Security Blueprint</b></a> •
+  <a href="#-redis-telemetry--grafana-observability"><b>📊 Observability</b></a> •
+  <a href="#-api-endpoints-reference"><b>🔌 API Reference</b></a>
+</p>
 
 </div>
 
 ---
 
-## 📸 Visual Interface Gallery & Screenshot Walkthrough
+## 📸 Interactive UI Gallery & Screenshot Walkthrough
+
+Explore the live functional modules of the CG-OCR Enterprise platform below. Each section represents a key component of the end-to-end ingestion, authentication, processing, and auditing lifecycle.
+
+<br/>
 
 <div align="center">
 
-### 1. Minimalist Landing Page & Performance Architecture
-*Clean Apple-minimalist hero displaying sub-15ms digital triage, Unlimited-OCR worker status, Gemini Vision AI fallback readiness, and live telemetry.*
+### 1. Landing Page & Performance Architecture
+*Apple-inspired dark minimalist command interface featuring real-time system metrics, dual-routing status, digital triage latency benchmarks (<15ms), and instant 1-click access.*
 
-<img src="docs/screenshots/01_landing_page.png" alt="CG-OCR Minimalist Landing Page" width="95%" style="border-radius: 10px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 10px 30px rgba(0,0,0,0.85);" />
-
-<br/><br/>
-
-### 2. Multi-Format PDF & Tabular Ingestion Queue
-*Drag-and-drop document upload queue supporting digital and scanned PDFs, multi-frame TIFFs, PNGs, and multi-sheet XLSX/CSV files with real-time file queue counters.*
-
-<img src="docs/screenshots/03_pdf_document_upload.png" alt="Multi-Format PDF and Document Upload Queue" width="95%" style="border-radius: 10px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 10px 30px rgba(0,0,0,0.85);" />
+<img src="docs/screenshots/01_landing_page.jpg" alt="CG-OCR Minimalist Landing Page" width="95%" style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 12px 35px rgba(0,0,0,0.85);" />
 
 <br/><br/>
 
-### 3. Execution Engine, Run Test & Live Streaming Telemetry
-*Collapsible streaming terminal displaying real-time OCR telemetry, sliding window packet progress, and extraction speed.*
+### 2. Employee Login System
+*Zero-trust authentication gateway protected by automated Anti-Bot OTP Guard. Enforces email whitelist validation and human verification checks before initiating token generation.*
 
-<img src="docs/screenshots/04_run_test_and_logs.png" alt="Live Execution Logs and Run Test Telemetry" width="95%" style="border-radius: 10px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 10px 30px rgba(0,0,0,0.85);" />
-
-<br/><br/>
-
-### 4. Zero-Trust Employee Login with Anti-Bot OTP Guard
-*Interactive OTP modal protected by automated bot defense. Dispatches unique 6-digit cryptographic verification codes directly to authorized Gmail inboxes via TLS SMTP relay.*
-
-<img src="docs/screenshots/02_login_otp_guard.png" alt="Employee Sign-In with Anti-Bot OTP Guard" width="65%" style="border-radius: 10px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 10px 30px rgba(0,0,0,0.85);" />
+<img src="docs/screenshots/02_login_system.png" alt="CG-OCR Employee Sign-In Portal" width="65%" style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 12px 35px rgba(0,0,0,0.85);" />
 
 <br/><br/>
 
-### 5. Task 3: Invoice Extraction & Mathematical Balancing Audit
-*Automated tabular extraction from complex Bengali receipts (e.g., Meghna Trading Corporation), checking subtotal + tax = total, with 1-click Excel, Supabase, JSON, and ZIP export.*
+### 3. OTP Verification Guard
+*Cryptographic one-time password verification dialog. 6-digit one-time codes are generated on the server with a 300-second TTL and dispatched exclusively via authenticated TLS SMTP to the user's Gmail inbox with zero client-side leakage.*
 
-<img src="docs/screenshots/05_invoice_extraction_audit.jpg" alt="Invoice Extraction and Validation Audit" width="95%" style="border-radius: 10px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 10px 30px rgba(0,0,0,0.85);" />
-
-<br/><br/>
-
-### 6. Real-Time Security Incident & Threat Telemetry Monitor
-*Real-time security logging intercepting unauthorized login attempts and bot attacks, capturing external public WAN IP (`103.196.235.141`), Geo-location (`Dhaka, BD`), and parsed device fingerprints.*
-
-<img src="docs/screenshots/06_security_threat_monitor.png" alt="Flagged Unauthorized Login Attempts Monitor" width="95%" style="border-radius: 10px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 10px 30px rgba(0,0,0,0.85);" />
+<img src="docs/screenshots/03_otp_verification.png" alt="Anti-Bot OTP Verification Screen" width="65%" style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 12px 35px rgba(0,0,0,0.85);" />
 
 <br/><br/>
 
-### 7. Scanned Input Document Benchmark (Bengali Typography)
-*Sample raw scanned Bengali invoice processed with complex multi-column tabular data and handwritten artifacts.*
+### 4. Multi-Format Document & Spreadsheet Upload Section
+*High-capacity drag-and-drop ingestion zone capable of batching up to 1,000 document pages and spreadsheets. Supports multi-page PDFs, TIFF, JPG, PNG, WEBP, and tabular datasets (XLSX, CSV, TSV).*
 
-<img src="docs/screenshots/07_bangla_invoice_sample.jpg" alt="Scanned Bengali Invoice Sample" width="55%" style="border-radius: 10px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 10px 30px rgba(0,0,0,0.85);" />
+<img src="docs/screenshots/04_upload_section.jpg" alt="Document & Spreadsheet Ingestion Queue" width="95%" style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 12px 35px rgba(0,0,0,0.85);" />
+
+<br/><br/>
+
+### 5. Enterprise Security Section & Real-Time Threat Tracking
+*Infrastructure health telemetry feed coupled with real-time audit logs of unauthorized login attempts, capturing external public WAN IP addresses (`103.196.235.141`), Geo-location (`Dhaka, BD`), and resolved hardware user-agent fingerprints.*
+
+<img src="docs/screenshots/05_security_section.jpg" alt="Security Health & Infrastructure Audit" width="95%" style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 12px 35px rgba(0,0,0,0.85);" />
+
+<br/>
+
+*Detailed view of the live threat monitoring table capturing blocked intrusion incidents:*
+
+<img src="docs/screenshots/05b_security_threat_table.png" alt="Flagged Unauthorized Login Attempts Incident Table" width="95%" style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 12px 35px rgba(0,0,0,0.85);" />
+
+<br/><br/>
+
+### 6. OCR Engine & Sliding Window Processing Section
+*Live execution console and telemetry terminal showing the 20-element sliding window batch processor in action, GPU model allocation, and real-time execution logs.*
+
+<img src="docs/screenshots/06_ocr_section.png" alt="OCR Execution Engine & Sliding Window Terminal" width="95%" style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 12px 35px rgba(0,0,0,0.85);" />
+
+<br/><br/>
+
+### 7. Financial Invoice Extraction & Mathematical Audit Section
+*Task 3 financial intelligence engine extracting structured invoices (e.g. invoice `#CHL-2026-0100`, Meghna Trading Corporation). Performs automated mathematical audits ($\text{Subtotal} + \text{Tax} = \text{Total}$) with 1-click Excel, Supabase, JSON, and ZIP export.*
+
+<img src="docs/screenshots/07_extraction_section.jpg" alt="Invoice Extraction and Financial Validation Audit" width="95%" style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 12px 35px rgba(0,0,0,0.85);" />
+
+<br/><br/>
+
+### 8. Team Collaboration & Workspace Chat Section
+*Integrated persistent team messaging channel allowing authenticated workspace operators, auditors, and administrators to communicate, share invoice audit notes, and collaborate in real time.*
+
+<img src="docs/screenshots/08_team_chat_section.jpg" alt="Authenticated Team Collaboration & Chat" width="95%" style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 12px 35px rgba(0,0,0,0.85);" />
+
+<br/><br/>
+
+### 9. Infrastructure Telemetry & Redis / Grafana Hub
+*Live system observability suite with real-time HTTP throughput (RPS), sub-15ms P95 latency curves, host CPU utilization, Redis hit ratio (98.6%), and one-click Grafana dashboard export.*
+
+<img src="docs/screenshots/09_infrastructure_observability.jpg" alt="Grafana Telemetry & Redis Observability Hub" width="95%" style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 12px 35px rgba(0,0,0,0.85);" />
 
 </div>
 
@@ -86,34 +120,34 @@
 
 ## 🏛️ System Architecture & Functional Flows
 
-### 1. End-to-End Processing & Dual-Route Extraction Pipeline
+### 1. End-to-End Ingestion & Dual-Route Extraction Engine
 ```mermaid
 flowchart TD
-    A["User Upload (PDF, JPG, PNG, TIFF, XLSX, CSV, TSV)"] --> B{"Magic-Byte Pre-Filter & Sanitizer"}
+    A["User Upload (PDF, Invoices, XLSX, CSV, TSV, Images)"] --> B{"Magic-Byte Pre-Filter & Sanitizer"}
     
-    %% Fast Path
+    %% Fast Path (Deterministic)
     B -->|"Digital Vector PDF / Spreadsheet"| C["Deterministic Fast-Path (<15ms)"]
     C --> D["PyMuPDF / openpyxl / csv.Sniffer"]
+    D -->|"0 Token Burn"| J["Structured Extracted Text & Tables"]
     
-    %% Heavy Path
+    %% Heavy Path (Scanned Invoices / Media)
     B -->|"Scanned Document / Raster Image"| E["OpenCV Preprocessor (cv2.INTER_AREA Max 1600px)"]
     E --> F["20-Element Sliding Epoch Batcher"]
-    F --> G["Baidu/Unlimited-OCR (Kaggle/Colab T4 Dual-GPU)"]
+    F --> G["Baidu/Unlimited-OCR (Kaggle/Colab Dual-GPU)"]
     
-    %% Fallback
+    %% Quality Gate & AI Fallback
     G --> H{"Confidence < 85% OR Bengali Text?"}
     H -->|"Yes (<0.85 / বাংলা)"| I["Gemini Vision AI (20-Item Packet Fallback)"]
-    H -->|"No (>= 0.85 Clean)"| J["Structured OCR Text"]
+    H -->|"No (>= 0.85 Clean)"| J
     I --> J
-    D --> J
     
-    %% Post Processing & Telemetry
-    J --> K["Task 3 Validation Audit (Math Balancing)"]
+    %% Financial Audit & Data Persistence
+    J --> K["Task 3 Invoice Validation Audit (Math Balancing)"]
     K --> L["Redis Telemetry Fast-Buffer (<0.2ms)"]
     L --> M["Supabase PostgreSQL Cloud DB (Auto-Sync)"]
     L --> N["Prometheus Exporter (/metrics)"]
     N --> O["Grafana Live Telemetry Dashboard"]
-    K --> P["Excel (.xlsx) / JSON / ZIP Exporter"]
+    K --> P["Excel (.xlsx) / JSON Report / ZIP Exporter"]
 ```
 
 <br/>
@@ -122,42 +156,42 @@ flowchart TD
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Employee as Employee / Attacker
-    participant Client as React Frontend
-    participant Server as FastAPI Gateway
-    participant Guard as Anti-Bot OTP Guard
-    participant DB as SQLite / Redis Store
+    actor User as Employee / Intruder
+    participant Client as React Client (Vite)
+    participant Server as FastAPI Security Gateway
+    participant Guard as Anti-Bot OTP Guard & Rate Limiter
+    participant Redis as Redis 7.2 Session Store
     participant SMTP as Google TLS SMTP Relay
-    participant Audit as Security Audit Log
+    participant Audit as Security Event Logger
 
-    Employee->>Client: Enters Email & Confirms Human Guard
-    Client->>Server: POST /api/auth/request-otp (with X-Client-IP & User-Agent)
-    Server->>Guard: Inspect Client WAN IP & Whitelist
+    User->>Client: Submits Email & Captcha Guard
+    Client->>Server: POST /api/auth/request-otp (Client WAN IP & UA)
+    Server->>Guard: Validate Email Whitelist & Sliding Rate Window
     
     alt Unregistered / Unauthorized Email
-        Guard->>Audit: Log UNAUTHORIZED_LOGIN_ATTEMPT (Real Public IP + Device)
-        Audit-->>Server: Event Recorded (BLOCKED)
-        Server-->>Client: 403 Forbidden ("Access Denied")
-    else Rate Limit Exceeded (>3 req / 60s)
+        Guard->>Audit: Log UNAUTHORIZED_LOGIN_ATTEMPT (Real IP + Device)
+        Audit-->>Server: Incident Recorded & Flagged
+        Server-->>Client: 403 Forbidden ("Access Denied: Unregistered Account")
+    else Exceeded Rate Limit (>3 req / 60s)
         Guard->>Audit: Log OTP_GUARD_BOT_ATTACK (CRITICAL)
-        Server-->>Client: 429 Too Many Requests
-    else Authorized Whitelisted Employee
-        Guard->>DB: Store Cryptographic 6-Digit OTP (TTL 300s)
-        Guard->>SMTP: Dispatch TLS Encrypted Email to Gmail Inbox
-        SMTP-->>Employee: Delivered to Employee Inbox
+        Server-->>Client: 429 Too Many Requests ("Rate limit exceeded")
+    else Authorized Employee
+        Guard->>Redis: Store Cryptographic OTP (TTL 300s, 3 attempts max)
+        Guard->>SMTP: Dispatch Code via TLS SMTP (smtp.gmail.com:587)
+        SMTP-->>User: Delivers 6-Digit Code to Inbox
         Server-->>Client: 200 OK ("Code dispatched to email")
     end
 
-    Employee->>Client: Enters 6-Digit Verification Code
+    User->>Client: Enters 6-Digit Verification Code
     Client->>Server: POST /api/auth/verify-otp
-    alt Invalid Code (3 Attempts Max)
-        Server->>Guard: Increment Failed Attempts
+    alt Incorrect Code (3 Attempts Exhausted)
+        Server->>Guard: Increment Failure Count
         Server->>Audit: Log FAILED_OTP_VERIFICATION / BRUTE_FORCE_LOCKOUT
-        Server-->>Client: 400 Bad Request
+        Server-->>Client: 400 Bad Request ("Invalid code")
     else Valid OTP Code
-        Server->>DB: Invalidate Session Code (Zero-Reuse)
-        Server-->>Client: 200 OK + Cryptographic Session Token
-        Client-->>Employee: Granted Workspace Access
+        Server->>Redis: Invalidate Code (Zero-Reuse Guarantee)
+        Server-->>Client: 200 OK + Cryptographic JWT Session Token
+        Client-->>User: Grants Workspace Access
     end
 ```
 
@@ -166,14 +200,14 @@ sequenceDiagram
 ### 3. Redis Fast-Buffer & Prometheus/Grafana Telemetry Stream
 ```mermaid
 flowchart LR
-    A["HTTP Requests / OCR Events"] --> B["FastAPI Telemetry Middleware"]
+    A["HTTP Ingestion & OCR Execution"] --> B["FastAPI Telemetry Middleware"]
     B --> C["Prometheus Metrics Registry (/metrics)"]
     B --> D["Redis Telemetry Engine (<0.2ms)"]
     
-    subgraph "Redis 7.2 Namespaces"
+    subgraph "Redis 7.2 Cache Namespaces"
         D --> E["otp:guard (Rate Limits & Sessions)"]
         D --> F["ocr:cache (Deduplication Hashes)"]
-        D --> G["auth:whitelist (Employee Fast Set)"]
+        D --> G["auth:whitelist (Employee Set)"]
         D --> H["telemetry:grafana (OpenMetrics Buffer)"]
     end
     
@@ -194,31 +228,31 @@ flowchart LR
   <tr>
     <td width="50%">
       <h3>Deterministic Fast-Path (&lt;15ms)</h3>
-      <p>Digital vector PDFs and spreadsheets completely bypass heavy deep learning models. Text streams and table cells are parsed in sub-15ms, saving <b>99% of compute overhead</b> and preserving original table schemas.</p>
+      <p>Digital vector PDFs, spreadsheets (XLSX, XLS), and delimited files (CSV, TSV) completely bypass heavy deep-learning networks. Structured text and tabular schemas are extracted in sub-15ms with <b>0 token consumption</b>.</p>
     </td>
     <td width="50%">
       <h3>Baidu/Unlimited-OCR Acceleration</h3>
-      <p>Leverages a 3B vision-language model with Reference Sliding Window Attention running on Kaggle/Colab Dual T4 GPUs. Connected seamlessly through zero-signup Cloudflare HTTPS tunnels.</p>
+      <p>Processes dense scanned media using a 3B vision-language architecture with Reference Sliding Window Attention running on Kaggle/Colab Dual T4 GPUs. Tunnelled securely via zero-configuration Cloudflare HTTPS endpoints.</p>
     </td>
   </tr>
   <tr>
     <td width="50%">
-      <h3>Gemini Vision AI Packet Fallback</h3>
-      <p>Documents with confidence scores below 85% or containing complex Bengali (<code>বাংলা</code>) script are aggregated into <b>20-element multiplexed packets</b> and routed to Gemini Vision AI for 98.4% precision recovery.</p>
+      <h3>Gemini Vision AI Fallback</h3>
+      <p>When line confidence scores drop below 85% or Bengali (<code>বাংলা</code>) typographic complexity is detected, batches are multiplexed into <b>20-element sliding packets</b> and routed to Gemini Vision AI for 98.4% accuracy recovery.</p>
     </td>
     <td width="50%">
-      <h3>Adaptive Resolution Downscaling</h3>
-      <p>High-resolution scans (&gt;1600px) are automatically resized using <code>cv2.INTER_AREA</code> downsampling with optimized JPEG compression, saving <b>~90% bandwidth</b> (~250 KB vs 2.5 MB) with zero legibility loss.</p>
+      <h3>Adaptive Downscaling & Compression</h3>
+      <p>Images larger than 1600px are automatically normalized via <code>cv2.INTER_AREA</code> downsampling and high-efficiency JPEG compression, slashing network transmission payload by <b>~90%</b> (~250 KB vs 2.5 MB) with zero legibility penalty.</p>
     </td>
   </tr>
   <tr>
     <td width="50%">
       <h3>Redis Telemetry & Fast-Buffer</h3>
-      <p>Full Redis integration supporting external clusters with seamless failover to an embedded high-speed Redis 7.2-compatible cache. Delivers sub-0.2ms latency for session caching, OTP guard tokens, and OCR deduplication.</p>
+      <p>Engineered for high-concurrency caching with seamless failover to an embedded Redis 7.2-compatible cache. Achieves sub-0.2ms round-trip latency for session handling, OTP anti-replay guards, and document hash deduplication.</p>
     </td>
     <td width="50%">
       <h3>Grafana & Prometheus Observability</h3>
-      <p>Real-time OpenMetrics scrape target exposed at <code>/metrics</code>. Provides live time-series curves for HTTP throughput (RPS), P95 latency, host CPU load, RSS memory, and downloadable Grafana dashboard JSON.</p>
+      <p>Native OpenMetrics exporter exposed at <code>/metrics</code>. Feeds live telemetry directly into Prometheus and Grafana dashboards, monitoring real-time request rates, P95 latency distributions, CPU/RAM utilization, and security event triggers.</p>
     </td>
   </tr>
 </table>
@@ -227,7 +261,7 @@ flowchart LR
 
 ## 🛡️ Security Capabilities & Threat Protection
 
-CG-OCR enforces zero-trust access control with real-time hardware telemetry:
+CG-OCR enforces enterprise-grade zero-trust access control with real-time hardware telemetry:
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
@@ -245,7 +279,7 @@ CG-OCR enforces zero-trust access control with real-time hardware telemetry:
 │                       │ (103.196.235.141) and ISP/City (Dhaka, BD)     │
 │                       │ rather than internal 127.0.0.1 loopback.       │
 ├───────────────────────┼────────────────────────────────────────────────┤
-│ Device Fingerprinting │ Decodes raw user agents into human-readable     │
+│ Device Fingerprinting │ Decodes raw user agents into human-readable    │
 │                       │ profiles: "Windows 11 PC • Google Chrome v131" │
 ├───────────────────────┼────────────────────────────────────────────────┤
 │ Zero Client-Side Leak │ OTP codes are NEVER exposed in API responses   │
@@ -264,63 +298,62 @@ CG-OCR enforces zero-trust access control with real-time hardware telemetry:
 ## 📖 How to Use the Whole System (Complete Manual)
 
 <details open>
-<summary><b>Click to collapse / expand: Step-by-Step Operator Guide</b></summary>
+<summary><b>Click to expand / collapse: Comprehensive Step-by-Step Operator Guide</b></summary>
 <br/>
 
-### 1. Landing Page Navigation
-* When you open `http://localhost:3000`, you are greeted by the minimalist **CG-OCR Landing Page**.
-* Review system capability indicators: **Digital PDF Triage (<15ms)**, **Unlimited-OCR GPU Engine**, **Gemini Vision Bangla Fallback**, and **Sub-15ms Latency**.
+### 1. Accessing the Workspace
+* Open your browser and navigate to `http://localhost:3000` (or your deployed production URL).
+* The **Minimalist Landing Page** provides an immediate overview of active pipelines, GPU worker status, and triage latency benchmarks.
 
 ### 2. Administrator Access & Whitelisting
-1. Click **Admin Sign-In** on the top navigation bar.
-2. In this MVP stage, Admin access grants **1-click administrative entry** without authentication barriers.
-3. In the **Admin Management Modal**, you can:
-   * View the persistent list of authorized employee emails.
-   * Add new employee email addresses (e.g., `audit.officer@careguide.com`).
-   * Revoke access for any employee with 1-click.
+1. Click **1-Click Admin Access (MVP)** on the landing page or top navigation bar.
+2. The administrative panel allows you to:
+   * View all active authorized employee email addresses.
+   * Add new employee email accounts (e.g., `auditor@careguide.com`).
+   * Instantly revoke access for terminated personnel.
 
-### 3. Employee Sign-In (Protected by OTP Guard)
+### 3. Employee Sign-In (Protected by Anti-Bot OTP Guard)
 1. Click **Employee Sign-In**.
-2. Enter your authorized email address (must be pre-authorized by Admin).
-3. Confirm the human check (**Anti-Bot OTP Guard**).
+2. Enter your authorized corporate email address.
+3. Complete the Anti-Bot confirmation checkbox.
 4. Click **Request Verification Code**:
-   * The backend validates your email against the database.
-   * A unique 6-digit cryptographic code is dispatched to your Gmail inbox via TLS SMTP.
-   * *The code is never displayed on screen or leaked in network traffic.*
-5. Enter the 6-digit code received in your email and click **Verify & Enter Workspace**.
+   * The server checks your email against the authorized database.
+   * An unauthorized email instantly creates a **HIGH SEVERITY** security audit log capturing your IP and device.
+   * If authorized, a secure 6-digit cryptographic code is dispatched to your Gmail inbox via TLS SMTP.
+5. Retrieve the code from your inbox, input the 6 digits into the verification field, and click **Verify & Enter Workspace**.
 
-### 4. Ingesting Documents & Running Extraction
-1. In the **OCR & Ingestion** tab, drag and drop any supported document:
-   * Digital or Scanned PDFs (up to 1,000 pages)
-   * High-resolution images: JPG, PNG, TIFF (multi-frame), WEBP
-   * Tabular spreadsheets: XLSX, XLS, CSV, TSV
-2. Toggle the **Live Extraction Log & Telemetry** dropdown to observe line-by-line pipeline execution.
-3. Click **Start OCR Extraction**:
-   * Digital vector PDFs bypass heavy models instantly.
-   * Images and scans are batched in 20-element epochs and sent to GPU OCR.
-   * Complex Bengali text or low-confidence lines (<85%) automatically route to Gemini Vision AI.
+### 4. Ingesting Documents, Spreadsheets & Invoices
+1. Switch to the **OCR & Extraction** tab.
+2. Drag and drop any supported document format into the ingestion zone:
+   * Multi-page digital or scanned PDFs (up to 1,000 pages).
+   * Scanned invoices and receipts (JPG, PNG, TIFF, WEBP).
+   * Tabular ledger files (XLSX, XLS, CSV, TSV).
+3. Expand the **Live Processing Telemetry & System Logs** viewer to monitor real-time worker allocation and memory buffers.
+4. Click **Start OCR Extraction**:
+   * Digital PDFs and tabular sheets finish in `<15ms` using deterministic parsing.
+   * Scanned files are preprocessed (`cv2.INTER_AREA`) and dispatched in 20-page epochs to GPU OCR.
+   * Degraded or handwritten Bengali lines are sent to Gemini Vision AI for high-accuracy fallback.
 
-### 5. Reviewing Invoice Audits & Data Balancing
-1. View the **Task 3: Invoices & Data Validation Audit** summary:
-   * Total Invoices, Clean Invoices, Flagged for Review.
-2. Click any invoice card to view:
-   * Supplier & Customer names (with full Bengali Unicode fidelity).
-   * Invoice Date, Currency (e.g., BDT).
-   * Subtotal, Tax, and Grand Total balance check.
-   * Itemized line-items with Qty, Unit Price, Total Amount, and Mathematical Match confirmation.
+### 5. Reviewing Invoice Audits & Mathematical Validation
+1. Upon extraction completion, navigate to the **Task 3: Invoices & Data Validation Audit** tab.
+2. Inspect extracted invoice records:
+   * Supplier / Vendor and Customer identification.
+   * Invoice Number (e.g. `#CHL-2026-0100`) and Billing Date.
+   * Subtotal, VAT/Tax rate, and Grand Total balance check ($\text{Subtotal} + \text{Tax} = \text{Total}$).
+   * Line-item breakdown with quantities, unit rates, item totals, and mathematical discrepancy flags.
 
-### 6. Exporting & Cloud Synchronization
-* **Download Invoices (.xlsx)**: Generates a multi-tab formatted Excel workbook.
-* **Save to Supabase**: Auto-commits records into 6 normalized PostgreSQL tables (`documents`, `invoices`, `invoice_items`, `rules`, `logs`, `stats`).
-* **JSON Report / ZIP**: Download complete structured JSON or bundled extraction artifacts.
+### 6. Exporting Results & Cloud Synchronization
+* **Download Invoices (.xlsx)**: Export a multi-tab Microsoft Excel workbook containing clean invoice schemas and itemized breakdowns.
+* **Save to Supabase**: Auto-commit records to 6 normalized PostgreSQL tables (`documents`, `invoices`, `invoice_items`, `rules`, `logs`, `stats`).
+* **JSON Report & ZIP**: Download machine-readable audit reports or complete file bundles for downstream ETL pipelines.
 
-### 7. Real-Time Telemetry & Team Chat
+### 7. Telemetry, Threat Monitoring & Team Chat
 * **Status & Security Tab**:
-  * Check live status across Backend, GPU, Gemini AI, Supabase, Redis, and Grafana.
-  * Inspect the **Flagged Unauthorized Login Attempts** table to monitor any security breach attempts with real IP and device fingerprints.
-  * Test live Redis PING latency (<0.2ms) and export the Grafana JSON dashboard.
-* **Team Collaboration Tab**:
-  * Message other authenticated employees logged into the workspace with persistent timestamps.
+  * Review live health across Backend, GPU Worker, Gemini AI, Supabase, Redis, and Grafana.
+  * Inspect the **Flagged Unauthorized Login Attempts** table to investigate blocked intrusion attempts with real IP and device fingerprints.
+  * Execute live Redis latency tests (<0.2ms) and export the Grafana dashboard JSON.
+* **Team Chat Tab**:
+  * Exchange real-time, persistent messages and audit notes with team members across the workspace.
 
 </details>
 
@@ -328,10 +361,10 @@ CG-OCR enforces zero-trust access control with real-time hardware telemetry:
 
 ## 📊 Redis Telemetry & Grafana Observability
 
-CG-OCR natively exports infrastructure telemetry ready for Prometheus and Grafana scraping.
+CG-OCR natively exports open observability metrics ready for scraping by Prometheus and Grafana.
 
-### Prometheus Configuration (`prometheus.yml`)
-To connect your Grafana Agent or Prometheus instance to CG-OCR:
+### Prometheus Scrape Configuration (`prometheus.yml`)
+Add this configuration snippet to your Prometheus or Grafana Agent configuration:
 
 ```yaml
 scrape_configs:
@@ -342,12 +375,12 @@ scrape_configs:
       - targets: ['127.0.0.1:8008']
 ```
 
-### Pre-Configured Grafana Dashboard JSON
-Download the complete ready-to-import Grafana dashboard directly from the running engine:
+### Ready-to-Import Grafana Dashboard
+Download the pre-configured Grafana dashboard JSON directly from the running server:
 ```bash
 curl -O http://127.0.0.1:8008/api/telemetry/grafana/export
 ```
-*Import the resulting `CG_OCR_Grafana_Dashboard.json` into Grafana (`Dashboards -> Import`) for real-time panels covering Request Throughput (RPS), P95 Latency, Redis Cache Hit %, Host CPU Utilization, and Security Intrusions.*
+*Import the exported `CG_OCR_Grafana_Dashboard.json` via Grafana (`Dashboards -> Import`) to visualize live panels for HTTP Throughput (RPS), P95 Latency, Redis Cache Hit Ratio, System Error Rates, and Security Threat Counters.*
 
 ---
 
@@ -359,31 +392,31 @@ curl -O http://127.0.0.1:8008/api/telemetry/grafana/export
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/Sifatkhan-1915020/CareGuide-OCR.git
-cd CareGuide-OCR
+git clone https://github.com/Sifatkhan-1915020/OCR-Project.git
+cd OCR-Project
 ```
 
 ### 2. Configure Environment Variables
-Copy `.env.example` to `.env` and provide your credentials:
+Copy `.env.example` to `.env` and configure your credentials:
 ```bash
 cp .env.example .env
 ```
 ```env
-# Gemini API Key (for Vision OCR & Bangla Fallback)
+# Google Gemini API Key (for Vision OCR & Multilingual Fallback)
 GEMINI_API_KEY=your_gemini_api_key_here
 
 # Supabase PostgreSQL Configuration
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_KEY=your_supabase_anon_or_service_role_key
 
-# Authenticated SMTP Email Dispatch (for OTP Guard)
+# Authenticated SMTP Email Relay (for OTP Guard)
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=your_email@gmail.com
 SMTP_PASS=your_google_app_password
 SMTP_FROM=your_email@gmail.com
 
-# Redis Telemetry & Fast-Buffer Engine (Optional, defaults to embedded cache)
+# Redis Telemetry Engine (Optional, defaults to high-speed embedded cache)
 REDIS_URL=redis://127.0.0.1:6379/0
 ```
 
@@ -403,13 +436,13 @@ npm --prefix frontend install
 ```bash
 python api_server.py
 ```
-*FastAPI server initializes on `http://127.0.0.1:8008`.*
+*Backend server initializes on `http://127.0.0.1:8008`.*
 
 #### Terminal 2: React Frontend (Vite)
 ```bash
 npm --prefix frontend run dev
 ```
-*React frontend initializes on `http://localhost:3000`.*
+*Vite frontend initializes on `http://localhost:3000`.*
 
 ---
 
@@ -439,12 +472,13 @@ npm --prefix frontend run dev
 
 ## 🚢 Production Deployment to Vercel
 
-The frontend is fully configured for continuous deployment on **Vercel**:
+The frontend is optimized for continuous deployment on **Vercel**:
 
-1. Fork or push this repository to your GitHub account: **`https://github.com/Sifatkhan-1915020/CareGuide-OCR`**.
-2. Open **[vercel.com/new](https://vercel.com/new)** and import `CareGuide-OCR`.
-3. Set **Root Directory** to `frontend` (Preset: `Vite`).
-4. Click **Deploy**. Vercel will build and assign an instant production URL with global CDN caching.
+1. Push your changes to GitHub: **`https://github.com/Sifatkhan-1915020/OCR-Project`**.
+2. Open **[vercel.com/new](https://vercel.com/new)** and import `OCR-Project`.
+3. Set **Root Directory** to `frontend` (Framework Preset: `Vite`).
+4. Add environment variables if required (`VITE_API_URL` pointing to your hosted FastAPI backend).
+5. Click **Deploy**. Vercel will build and assign an instant production URL with global CDN acceleration.
 
 ---
 
