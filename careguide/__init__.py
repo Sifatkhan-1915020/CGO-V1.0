@@ -16,6 +16,17 @@ from .invoice_extractor import (
     ValidationIssue,
 )
 from .supabase_client import SupabaseClient
+from .api_keys import (
+    generate_api_key,
+    validate_api_key,
+    revoke_api_key,
+    reactivate_api_key,
+    delete_api_key,
+    list_api_keys,
+    get_api_key_by_id,
+    get_api_key_usage_stats,
+    record_api_usage,
+)
 
 __all__ = [
     "DocumentResult",
@@ -34,4 +45,13 @@ __all__ = [
     "ValidatedInvoice",
     "ValidationIssue",
     "SupabaseClient",
+    "generate_api_key",
+    "validate_api_key",
+    "revoke_api_key",
+    "reactivate_api_key",
+    "delete_api_key",
+    "list_api_keys",
+    "get_api_key_by_id",
+    "get_api_key_usage_stats",
+    "record_api_usage",
 ]

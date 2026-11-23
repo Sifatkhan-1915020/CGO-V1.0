@@ -15,7 +15,7 @@ import tempfile
 import asyncio
 import threading
 from typing import List, Optional, Dict, Any, Tuple
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 import pandas as pd
@@ -26,6 +26,18 @@ from careguide.gemini_fallback import GeminiOCRClient
 from careguide.schema import ProcessingStatus
 from careguide.invoice_extractor import InvoiceExtractor, ValidatedInvoice, InvoiceData
 from careguide.supabase_client import SupabaseClient
+from careguide.api_keys import (
+    generate_api_key,
+    validate_api_key,
+    revoke_api_key,
+    reactivate_api_key,
+    delete_api_key,
+    list_api_keys,
+    get_api_key_by_id,
+    get_api_key_usage_stats,
+    record_api_usage,
+    init_api_keys_db,
+)
 
 # Load .env file automatically
 _env_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
@@ -37,7 +49,55 @@ if os.path.exists(_env_file):
                 _k, _v = _line.split("=", 1)
                 os.environ[_k.strip()] = _v.strip()
 
-app = FastAPI(title="CareGuide Document Extraction API", version="1.0.0")
+from fastapi.openapi.utils import get_openapi
+
+app = FastAPI(
+    title="CareGuide Document Extraction & Invoice Audit API",
+    version="1.0.0",
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json"
+)
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title="CareGuide Developer API & OCR Engine",
+        version="1.0.0",
+        description="Interactive OpenAPI & Swagger documentation for CareGuide Multi-Format Document Extraction, Tabular Ingestion, Financial Invoice Auditing, and API Key Management.",
+        routes=app.routes,
+    )
+    if "components" not in openapi_schema:
+        openapi_schema["components"] = {}
+    openapi_schema["components"]["securitySchemes"] = {
+        "ApiKeyAuth": {
+            "type": "apiKey",
+            "in": "header",
+            "name": "X-API-Key",
+            "description": "CareGuide Secret API Key (e.g. cg_live_...)"
+        },
+        "BearerAuth": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "API Key",
+            "description": "CareGuide Secret API Key as Bearer Token"
+        }
+    }
+    openapi_schema["security"] = [{"ApiKeyAuth": []}, {"BearerAuth": []}]
+    openapi_schema["servers"] = [
+        {"url": "/", "description": "Current Origin / Vercel Proxy"},
+        {"url": "http://localhost:8008", "description": "Local FastAPI Backend"},
+        {"url": "http://127.0.0.1:8000", "description": "Kaggle / Colab GPU Cloud Tunnel"}
+    ]
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
+
+@app.get("/openapi.json", include_in_schema=False)
+async def get_root_openapi():
+    return JSONResponse(custom_openapi())
 
 # Enable CORS for React frontend (Vite port 3000, 5173, etc.)
 app.add_middleware(
@@ -1747,6 +1807,391 @@ async def download_invoices_excel(id: str):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": "attachment; filename=CareGuide_Invoices_Validated.xlsx"}
     )
+
+
+# -------------------------------------------------------------
+# CareGuide Developer REST API & API Key Management System
+# -------------------------------------------------------------
+
+def extract_api_key_from_request(request: Request) -> Optional[str]:
+    """Extract API key from X-API-Key header, Authorization Bearer header, or query parameter."""
+    header_key = request.headers.get("x-api-key")
+    if header_key and header_key.strip():
+        return header_key.strip()
+
+    auth_header = request.headers.get("authorization", "")
+    if auth_header.strip().lower().startswith("bearer "):
+        token = auth_header.strip()[7:].strip()
+        if token:
+            return token
+
+    param_key = request.query_params.get("api_key")
+    if param_key and param_key.strip():
+        return param_key.strip()
+
+    return None
+
+
+def verify_api_key_dependency(scope: Optional[str] = None):
+    """Dependency that authenticates developer requests with API key and verifies scope and quota."""
+    async def dependency(request: Request) -> Dict[str, Any]:
+        raw_key = extract_api_key_from_request(request)
+        if not raw_key:
+            raise HTTPException(
+                status_code=401,
+                detail="API key required. Provide via 'X-API-Key' or 'Authorization: Bearer <key>' header."
+            )
+
+        client_ip = get_real_client_ip(request)
+        is_valid, err_msg, key_rec = validate_api_key(raw_key, required_scope=scope, client_ip=client_ip)
+        if not is_valid:
+            status_code = 401
+            if err_msg and ("Rate limit" in err_msg or "quota exceeded" in err_msg):
+                status_code = 429
+            elif err_msg and "lacks required scope" in err_msg:
+                status_code = 403
+            raise HTTPException(status_code=status_code, detail=err_msg or "Invalid API key.")
+
+        return key_rec
+
+    return dependency
+
+
+async def optional_api_key_dependency(request: Request) -> Optional[Dict[str, Any]]:
+    """Optional API key dependency for backward-compatible frontend endpoints."""
+    raw_key = extract_api_key_from_request(request)
+    if not raw_key:
+        return None
+    client_ip = get_real_client_ip(request)
+    is_valid, _, key_rec = validate_api_key(raw_key, client_ip=client_ip)
+    return key_rec if is_valid else None
+
+
+# --- API Key Management Endpoints ---
+
+@app.post("/api/keys/generate")
+@app.post("/api/v1/keys")
+async def create_new_api_key(payload: Dict[str, Any], request: Request):
+    """
+    Generate a new CareGuide API key with configurable scopes, RPM, and quota limits.
+    """
+    name = (payload.get("name") or payload.get("customer_id") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Customer or application name is required.")
+
+    scopes = payload.get("scopes")
+    if isinstance(scopes, str):
+        scopes = [s.strip() for s in scopes.split(",") if s.strip()]
+
+    try:
+        rpm = int(payload.get("rate_limit_rpm", payload.get("rpm", 60)))
+        total_limit = int(payload.get("total_limit", payload.get("limit", -1)))
+        days = int(payload.get("expires_in_days", payload.get("days", 90)))
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid numeric value for rpm, limit, or days.")
+
+    is_test = bool(payload.get("is_test", payload.get("test", False)))
+    created_by = (payload.get("created_by") or "API_ADMIN").strip()
+
+    try:
+        record = generate_api_key(
+            name=name,
+            scopes=scopes,
+            rate_limit_rpm=rpm,
+            total_limit=total_limit,
+            expires_in_days=days if days > 0 else None,
+            is_test=is_test,
+            created_by=created_by
+        )
+        db_log_security_event(
+            evt_type="API_KEY_CREATED",
+            severity="INFO",
+            title="New API Key Generated",
+            ip=get_real_client_ip(request),
+            device=request.headers.get("user-agent", "Unknown")[:120],
+            message=f"Created API key '{record['key_id']}' for '{name}' with {rpm} RPM limit."
+        )
+        return {"status": "success", "data": record}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate API key: {str(e)}")
+
+
+@app.get("/api/keys")
+@app.get("/api/v1/keys")
+async def list_all_api_keys(active_only: bool = False):
+    """List all registered API keys (raw secrets are masked for safety)."""
+    return {"status": "success", "keys": list_api_keys(active_only=active_only)}
+
+
+@app.post("/api/keys/{key_id}/revoke")
+@app.delete("/api/keys/{key_id}")
+@app.delete("/api/v1/keys/{key_id}")
+async def revoke_existing_api_key(key_id: str, request: Request):
+    """Revoke an active API key immediately."""
+    success = revoke_api_key(key_id)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"API key '{key_id}' not found.")
+
+    db_log_security_event(
+        evt_type="API_KEY_REVOKED",
+        severity="WARNING",
+        title="API Key Revoked",
+        ip=get_real_client_ip(request),
+        device=request.headers.get("user-agent", "Unknown")[:120],
+        message=f"API key '{key_id}' was revoked."
+    )
+    return {"status": "success", "message": f"API key '{key_id}' has been revoked."}
+
+
+@app.get("/api/keys/verify")
+@app.get("/api/v1/keys/verify")
+async def verify_current_key(request: Request):
+    """Verify an API key supplied via X-API-Key or Bearer header."""
+    raw_key = extract_api_key_from_request(request)
+    if not raw_key:
+        raise HTTPException(status_code=401, detail="No API key provided.")
+
+    is_valid, err_msg, rec = validate_api_key(raw_key, client_ip=get_real_client_ip(request))
+    if not is_valid:
+        raise HTTPException(status_code=401, detail=err_msg or "Invalid API key.")
+
+    clean_rec = dict(rec)
+    clean_rec.pop("key_hash", None)
+    return {"status": "valid", "key": clean_rec}
+
+
+@app.get("/api/keys/{key_id}")
+@app.get("/api/v1/keys/{key_id}")
+async def get_key_stats(key_id: str):
+    """Retrieve usage statistics and audit logs for a key."""
+    stats = get_api_key_usage_stats(key_id)
+    if "error" in stats:
+        raise HTTPException(status_code=404, detail=stats["error"])
+    return {"status": "success", "data": stats}
+
+
+# --- Dedicated Developer API v1 Endpoints ---
+
+@app.get("/v1/health")
+@app.get("/api/v1/health")
+async def v1_api_health(
+    request: Request,
+    key_record: Dict[str, Any] = Depends(verify_api_key_dependency("health"))
+):
+    """
+    Developer API v1 Health Check.
+    Requires valid API key with 'health' or 'admin' or '*' scope.
+    """
+    start_t = time.time()
+    latency_ms = (time.time() - start_t) * 1000
+    record_api_usage(
+        key_id=key_record["key_id"],
+        endpoint="/v1/health",
+        method="GET",
+        status_code=200,
+        client_ip=get_real_client_ip(request),
+        latency_ms=latency_ms
+    )
+    return {
+        "status": "healthy",
+        "version": "1.0.0",
+        "client": {
+            "name": key_record["name"],
+            "key_id": key_record["key_id"],
+            "masked_key": key_record["masked_key"],
+            "rate_limit_rpm": key_record["rate_limit_rpm"],
+            "total_requests": key_record["total_requests"]
+        },
+        "engine": "CareGuide NextGen Extraction Engine",
+        "timestamp": time.time()
+    }
+
+
+@app.post("/v1/extract")
+@app.post("/api/v1/extract")
+async def v1_extract_documents(
+    request: Request,
+    files: List[UploadFile] = File(...),
+    api_url: Optional[str] = Form(None),
+    gemini_api_key: Optional[str] = Form(None),
+    batch_size: int = Form(20),
+    key_record: Dict[str, Any] = Depends(verify_api_key_dependency("extract"))
+):
+    """
+    Developer API v1: Multi-Format Document & Tabular Extraction.
+    Accepts PDF, JPG, PNG, TIFF, XLSX, XLS, CSV.
+    Requires API Key with 'extract' scope.
+    """
+    start_t = time.time()
+    if not files:
+        raise HTTPException(status_code=400, detail="No files uploaded.")
+
+    temp_dir = tempfile.mkdtemp(prefix="careguide_v1_")
+    saved_paths = []
+    try:
+        for f in files:
+            file_path = os.path.join(temp_dir, f.filename)
+            content = await f.read()
+            with open(file_path, "wb") as out_f:
+                out_f.write(content)
+            saved_paths.append(file_path)
+
+        clean_url = api_url.strip() if api_url and api_url.strip() else None
+        clean_gemini_key = (gemini_api_key.strip() if gemini_api_key and gemini_api_key.strip() else None) or os.environ.get("GEMINI_API_KEY", "").strip() or None
+
+        orchestrator = DocumentOrchestrator(
+            api_url=clean_url,
+            gemini_api_key=clean_gemini_key,
+            batch_size=batch_size,
+            checkpoint_db=os.path.join(temp_dir, "v1_check.db"),
+            jsonl_output=os.path.join(temp_dir, "v1_stream.jsonl")
+        )
+
+        doc_results = orchestrator.process_files(saved_paths)
+        duration = round(time.time() - start_t, 3)
+        latency_ms = duration * 1000
+
+        record_api_usage(
+            key_id=key_record["key_id"],
+            endpoint="/v1/extract",
+            method="POST",
+            status_code=200,
+            client_ip=get_real_client_ip(request),
+            latency_ms=latency_ms
+        )
+
+        return {
+            "status": "success",
+            "client_id": key_record["key_id"],
+            "processing_time_sec": duration,
+            "total_documents": len(doc_results),
+            "documents": [doc.model_dump() for doc in doc_results]
+        }
+    except Exception as e:
+        latency_ms = (time.time() - start_t) * 1000
+        record_api_usage(
+            key_id=key_record["key_id"],
+            endpoint="/v1/extract",
+            method="POST",
+            status_code=500,
+            client_ip=get_real_client_ip(request),
+            latency_ms=latency_ms
+        )
+        raise HTTPException(status_code=500, detail=f"Extraction failed: {str(e)}")
+    finally:
+        import shutil
+        try:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+
+@app.post("/v1/invoices/extract")
+@app.post("/api/v1/invoices/extract")
+async def v1_extract_invoices(
+    request: Request,
+    files: Optional[List[UploadFile]] = File(None),
+    gemini_api_key: Optional[str] = Form(None),
+    max_invoices: Optional[int] = Form(None),
+    key_record: Dict[str, Any] = Depends(verify_api_key_dependency("invoices"))
+):
+    """
+    Developer API v1: Direct File Invoice Extraction & Multi-Field Validation.
+    Upload PDF, image, or spreadsheet invoice files directly to extract vendor,
+    invoice number, dates, line items, taxes, totals, and validation status.
+    Requires API Key with 'invoices' scope.
+    """
+    start_t = time.time()
+    clean_gemini_key = (gemini_api_key or "").strip() or os.environ.get("GEMINI_API_KEY", "").strip()
+
+    # Case A: Direct file upload
+    if files and len(files) > 0 and files[0].filename:
+        temp_dir = tempfile.mkdtemp(prefix="careguide_inv_v1_")
+        saved_paths = []
+        try:
+            for f in files:
+                file_path = os.path.join(temp_dir, f.filename)
+                content = await f.read()
+                with open(file_path, "wb") as out_f:
+                    out_f.write(content)
+                saved_paths.append(file_path)
+
+            orchestrator = DocumentOrchestrator(
+                gemini_api_key=clean_gemini_key or None,
+                batch_size=20,
+                checkpoint_db=os.path.join(temp_dir, "v1_inv.db")
+            )
+            doc_results = orchestrator.process_files(saved_paths)
+            doc_dicts = [d.model_dump() for d in doc_results]
+
+            tabular_invoices, doc_text_pairs = partition_documents_for_invoice_extraction(doc_dicts, max_invoices=max_invoices)
+            extractor = InvoiceExtractor(api_key=clean_gemini_key)
+            all_extracted: List[InvoiceData] = list(tabular_invoices)
+
+            if doc_text_pairs:
+                if not extractor.is_configured:
+                    raise HTTPException(status_code=400, detail="Gemini API key is required for visual invoice OCR extraction.")
+                gemini_extracted = extractor.extract_invoices_from_text_batch(doc_text_pairs)
+                all_extracted.extend(gemini_extracted)
+
+            validated = extractor.validate_invoices(all_extracted)
+            duration = round(time.time() - start_t, 3)
+            latency_ms = duration * 1000
+
+            record_api_usage(
+                key_id=key_record["key_id"],
+                endpoint="/v1/invoices/extract",
+                method="POST",
+                status_code=200,
+                client_ip=get_real_client_ip(request),
+                latency_ms=latency_ms
+            )
+
+            clean_count = sum(1 for v in validated if not v.requires_manual_review)
+            review_count = sum(1 for v in validated if v.requires_manual_review)
+
+            return {
+                "status": "success",
+                "client_id": key_record["key_id"],
+                "processing_time_sec": duration,
+                "total_invoices": len(validated),
+                "clean_count": clean_count,
+                "review_count": review_count,
+                "invoices": [
+                    {
+                        **v.invoice.model_dump(),
+                        "requires_manual_review": v.requires_manual_review,
+                        "validation_status": v.validation_status,
+                        "issues": [{**iss.model_dump(), "issue_type": iss.rule} for iss in v.issues],
+                        "validation_issues": [{**iss.model_dump(), "issue_type": iss.rule} for iss in v.issues]
+                    }
+                    for v in validated
+                ]
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            latency_ms = (time.time() - start_t) * 1000
+            record_api_usage(
+                key_id=key_record["key_id"],
+                endpoint="/v1/invoices/extract",
+                method="POST",
+                status_code=500,
+                client_ip=get_real_client_ip(request),
+                latency_ms=latency_ms
+            )
+            raise HTTPException(status_code=500, detail=f"Invoice extraction error: {str(e)}")
+        finally:
+            import shutil
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    # Case B: JSON body with pre-extracted documents
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Provide either multipart 'files' upload or JSON body with 'documents'.")
+
+    return await extract_and_validate_invoices(body)
 
 
 if __name__ == "__main__":

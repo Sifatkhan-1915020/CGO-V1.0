@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CareGuide API — Interactive Swagger UI</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2338bdf8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polygon points='12 2 2 7 12 12 22 7 12 2'/><polyline points='2 17 12 22 22 17'/><polyline points='2 12 12 17 22 12'/></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.18.2/swagger-ui.css" />
+  <style>
+    :root {
+      --bg: #09090b;
+      --card-bg: #141416;
+      --border: rgba(255, 255, 255, 0.1);
+      --accent: #38bdf8;
+      --accent-hover: #0284c7;
+      --text-main: #f4f4f5;
+      --text-muted: #a1a1aa;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      background-color: var(--bg);
+      color: var(--text-main);
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    /* Top CareGuide Developer Header */
+    .cg-header {
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .cg-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: inherit;
+    }
+    .cg-logo-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      background: #ffffff;
+      color: #000000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 16px;
+    }
+    .cg-title {
+      font-size: 1.15rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .cg-badge {
+      font-size: 0.68rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .badge-v1 {
+      background: rgba(56, 189, 248, 0.15);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+    }
+    .badge-live {
+      background: rgba(34, 197, 94, 0.15);
+      color: #4ade80;
+      border: 1px solid rgba(34, 197, 94, 0.3);
+    }
+    .cg-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .btn-nav {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 14px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      border-radius: 8px;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .btn-primary {
+      background: #ffffff;
+      color: #000000;
+      border: 1px solid #ffffff;
+    }
+    .btn-primary:hover {
+      background: #e4e4e7;
+    }
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.05);
+      color: #ffffff;
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.12);
+    }
+    /* Sub-banner Quick Start */
+    .cg-quick-banner {
+      background: linear-gradient(90deg, rgba(56, 189, 248, 0.08) 0%, rgba(14, 165, 233, 0.03) 100%);
+      border-bottom: 1px solid rgba(56, 189, 248, 0.2);
+      padding: 10px 24px;
+      font-size: 0.82rem;
+      color: #cbd5e1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .cg-quick-banner code {
+      font-family: 'JetBrains Mono', monospace;
+      background: rgba(0, 0, 0, 0.4);
+      padding: 2px 7px;
+      border-radius: 5px;
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.25);
+    }
+    /* Swagger Container Overrides */
+    #swagger-ui {
+      max-width: 1280px;
+      margin: 0 auto;
+      width: 100%;
+      padding: 20px 24px 60px 24px;
+      flex: 1;
+    }
+    /* Modernize Swagger UI elements */
+    .swagger-ui .info {
+      margin: 20px 0;
+    }
+    .swagger-ui .info .title {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      color: #ffffff;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+    .swagger-ui .info p, .swagger-ui .info li, .swagger-ui .info table {
+      color: #a1a1aa;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      line-height: 1.6;
+    }
+    .swagger-ui .scheme-container {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px 24px;
+      margin-bottom: 24px;
+      box-shadow: none;
+    }
+    .swagger-ui .btn.authorize {
+      border-color: #38bdf8;
+      color: #38bdf8;
+      background: rgba(56, 189, 248, 0.1);
+      border-radius: 8px;
+      font-weight: 600;
+      padding: 6px 16px;
+      transition: all 0.2s ease;
+    }
+    .swagger-ui .btn.authorize:hover {
+      background: #38bdf8;
+      color: #000000;
+    }
+    .swagger-ui .btn.authorize svg {
+      fill: #38bdf8;
+    }
+    .swagger-ui .btn.authorize:hover svg {
+      fill: #000000;
+    }
+    .swagger-ui .opblock {
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: rgba(20, 20, 22, 0.7);
+      margin-bottom: 14px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+    }
+    .swagger-ui .opblock .opblock-summary {
+      padding: 12px 18px;
+    }
+    .swagger-ui .opblock-tag {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-weight: 700;
+      color: #f4f4f5;
+      border-bottom: 1px solid var(--border);
+      padding: 16px 0 8px 0;
+      margin: 24px 0 14px 0;
+    }
+    .swagger-ui select {
+      background: #141416;
+      color: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 10px;
+    }
+    .swagger-ui input[type=text] {
+      background: #141416;
+      color: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 10px;
+    }
+    .swagger-ui .dialog-ux .modal-ux {
+      background: #141416;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+    }
+    .swagger-ui .dialog-ux .modal-ux-header {
+      border-bottom: 1px solid var(--border);
+    }
+    .swagger-ui .dialog-ux .modal-ux-header h3 {
+      color: #ffffff;
+    }
+    .swagger-ui .dialog-ux .modal-ux-content {
+      color: #d4d4d8;
+    }
+    .swagger-ui section.models {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(20, 20, 22, 0.7);
+    }
+    .swagger-ui section.models h4 {
+      color: #ffffff;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+    footer.cg-footer {
+      border-top: 1px solid var(--border);
+      padding: 20px 24px;
+      text-align: center;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      background: var(--bg);
+    }
+  </style>
+</head>
+<body>
+  <!-- Header Bar -->
+  <header class="cg-header">
+    <a href="/" class="cg-brand">
+      <div class="cg-logo-icon">CG</div>
+      <div>
+        <div class="cg-title">
+          <span>CareGuide Developer API</span>
+          <span class="cg-badge badge-v1">OpenAPI 3.1</span>
+          <span class="cg-badge badge-live">Live</span>
+        </div>
+        <div style="font-size: 0.72rem; color: #71717a;">High-Scale Document & Invoice Extraction Engine</div>
+      </div>
+    </a>
+
+    <div class="cg-actions">
+      <a href="/" class="btn-nav btn-secondary">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        CareGuide Workspace
+      </a>
+      <a href="https://github.com/Sifatkhan-1915020/CGO-V1.0" target="_blank" rel="noopener noreferrer" class="btn-nav btn-secondary">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+        GitHub
+      </a>
+    </div>
+  </header>
+
+  <!-- Quick Start Notification Bar -->
+  <div class="cg-quick-banner">
+    <div>
+      🔑 <strong>Authentication Required:</strong> Generate your API key via CLI (<code>python create_key.py &lt;name&gt;</code>) or CareGuide Settings, then click <strong>Authorize</strong> above to test endpoints.
+    </div>
+    <div>
+      <span>Spec: <code>/openapi.json</code></span>
+    </div>
+  </div>
+
+  <!-- Swagger UI Mount Point -->
+  <div id="swagger-ui"></div>
+
+  <!-- Footer -->
+  <footer class="cg-footer">
+    CareGuide Enterprise Document & Tabular Extraction Engine • Deployed with Vercel Global Edge CDN & FastAPI
+  </footer>
+
+  <script src="https://unpkg.com/swagger-ui-dist@5.18.2/swagger-ui-bundle.js"></script>
+  <script src="https://unpkg.com/swagger-ui-dist@5.18.2/swagger-ui-standalone-preset.js"></script>
+  <script>
+    window.onload = function() {
+      // Determine OpenAPI spec path relative to root
+      const specUrl = window.location.origin + '/openapi.json';
+
+      window.ui = SwaggerUIBundle({
+        url: specUrl,
+        dom_id: '#swagger-ui',
+        deepLinking: true,
+        presets: [
+          SwaggerUIBundle.presets.apis,
+          SwaggerUIStandalonePreset
+        ],
+        plugins: [
+          SwaggerUIBundle.plugins.DownloadUrl
+        ],
+        layout: "BaseLayout",
+        persistAuthorization: true,
+        displayRequestDuration: true,
+        docExpansion: "list",
+        filter: true,
+        showExtensions: true,
+        showCommonExtensions: true,
+        defaultModelsExpandDepth: 1,
+        defaultModelExpandDepth: 1,
+        onComplete: function() {
+          console.log("CareGuide Swagger UI loaded successfully from " + specUrl);
+        }
+      });
+    };
+  </script>
+</body>
+</html>

@@ -3,6 +3,10 @@
   "outputDirectory": "frontend/dist",
   "framework": "vite",
   "rewrites": [
+    { "source": "/docs", "destination": "/docs/index.html" },
+    { "source": "/swagger", "destination": "/swagger/index.html" },
+    { "source": "/api-docs", "destination": "/docs/index.html" },
+    { "source": "/openapi.json", "destination": "/openapi.json" },
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]

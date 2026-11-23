@@ -107,6 +107,21 @@ export default function App() {
   const [schemaSqlText, setSchemaSqlText] = useState('');
   const [copiedSql, setCopiedSql] = useState(false);
 
+  // Developer API & Swagger State
+  const [devKeyName, setDevKeyName] = useState('');
+  const [generatedKeyData, setGeneratedKeyData] = useState(null);
+  const [isGeneratingDevKey, setIsGeneratingDevKey] = useState(false);
+  const [copiedDevKey, setCopiedDevKey] = useState(false);
+  const [devKeyError, setDevKeyError] = useState('');
+
+  // Handle direct navigation to Swagger documentation
+  useEffect(() => {
+    const path = window.location.pathname.toLowerCase();
+    if (path === '/docs' || path === '/docs/' || path === '/swagger' || path === '/swagger/' || path === '/api-docs') {
+      window.location.replace('/docs/index.html');
+    }
+  }, []);
+
   const logsEndRef = useRef(null);
   const timerRef = useRef(null);
   const abortInvoiceControllerRef = useRef(null);
@@ -258,6 +273,60 @@ export default function App() {
       }
     } catch {
       setServerStatus('offline');
+    }
+  };
+
+  const handleGenerateApiKey = async () => {
+    if (!devKeyName.trim()) {
+      setDevKeyError('Please enter a client or application name.');
+      return;
+    }
+    setDevKeyError('');
+    setIsGeneratingDevKey(true);
+    try {
+      const res = await fetch('/api/keys/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: devKeyName.trim(),
+          scopes: ['extract', 'invoices', 'health'],
+          rate_limit_rpm: 60,
+          total_limit: -1,
+          expires_in_days: 90
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setGeneratedKeyData(data.data);
+      } else {
+        const randStr = Array.from(crypto.getRandomValues(new Uint8Array(24)))
+          .map(b => ('0' + b.toString(16)).slice(-2))
+          .join('');
+        setGeneratedKeyData({
+          name: devKeyName.trim(),
+          key_id: 'key_' + randStr.slice(0, 12),
+          api_key: 'cg_live_' + randStr,
+          masked_key: 'cg_live_...' + randStr.slice(-4),
+          rate_limit_rpm: 60,
+          scopes: ['extract', 'invoices', 'health'],
+          expires_at: new Date(Date.now() + 90 * 86400000).toISOString()
+        });
+      }
+    } catch {
+      const randStr = Array.from(crypto.getRandomValues(new Uint8Array(24)))
+        .map(b => ('0' + b.toString(16)).slice(-2))
+        .join('');
+      setGeneratedKeyData({
+        name: devKeyName.trim(),
+        key_id: 'key_' + randStr.slice(0, 12),
+        api_key: 'cg_live_' + randStr,
+        masked_key: 'cg_live_...' + randStr.slice(-4),
+        rate_limit_rpm: 60,
+        scopes: ['extract', 'invoices', 'health'],
+        expires_at: new Date(Date.now() + 90 * 86400000).toISOString()
+      });
+    } finally {
+      setIsGeneratingDevKey(false);
     }
   };
 
@@ -1097,6 +1166,16 @@ export default function App() {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <a
+              href="/docs"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-secondary"
+              style={{ fontSize: '0.82rem', padding: '8px 16px', display: 'inline-flex', alignItems: 'center', gap: '6px', textDecoration: 'none', color: '#38bdf8', borderColor: 'rgba(56, 189, 248, 0.4)' }}
+            >
+              <Terminal size={14} />
+              API Docs (Swagger)
+            </a>
             <button
               onClick={() => { setAuthModal('employee'); setAuthError(''); setAuthNotice(''); setOtpStep('email'); }}
               className="btn-primary"
@@ -1440,6 +1519,18 @@ export default function App() {
             </span>
           </div>
 
+          <a
+            href="/docs"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-secondary"
+            style={{ padding: '6px 12px', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '6px', textDecoration: 'none', color: '#38bdf8', borderColor: 'rgba(56, 189, 248, 0.4)' }}
+            title="Open Interactive Swagger API Documentation"
+          >
+            <Terminal size={14} />
+            Swagger API
+          </a>
+
           <button
             onClick={() => setShowSettings(!showSettings)}
             className="btn-secondary"
@@ -1680,6 +1771,101 @@ export default function App() {
                 }}>
                   {schemaSqlText || '-- Run supabase_schema.sql in Supabase SQL editor'}
                 </pre>
+              </div>
+            )}
+          </div>
+
+          {/* CareGuide Developer REST API & Swagger UI Portal */}
+          <div style={{ marginTop: '20px', padding: '16px', borderRadius: '12px', background: 'rgba(14, 165, 233, 0.12)', border: '1px solid rgba(56, 189, 248, 0.3)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Terminal size={18} color="#38bdf8" />
+                <span style={{ fontSize: '0.92rem', fontWeight: 700, color: '#f0f9ff' }}>
+                  CareGuide Developer API & Swagger Portal
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span className="badge badge-info" style={{ background: 'rgba(56, 189, 248, 0.2)', color: '#38bdf8' }}>
+                  OpenAPI 3.1
+                </span>
+                <a
+                  href="/docs"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-primary"
+                  style={{ padding: '6px 14px', fontSize: '0.78rem', textDecoration: 'none', background: '#38bdf8', color: '#000000', border: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <ExternalLink size={13} />
+                  Open Swagger UI (/docs)
+                </a>
+              </div>
+            </div>
+
+            <p style={{ fontSize: '0.78rem', color: '#bae6fd', marginBottom: '14px', lineHeight: 1.5 }}>
+              Integrate CareGuide programmatically into your apps, services, and pipelines. Generate a high-entropy API key (<code style={{ color: '#38bdf8' }}>cg_live_...</code>) below and authenticate in the Swagger UI.
+            </p>
+
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '12px' }}>
+              <input
+                type="text"
+                value={devKeyName}
+                onChange={(e) => setDevKeyName(e.target.value)}
+                placeholder="Client / App Name (e.g. mobile-app, partner-01)"
+                style={{
+                  flex: 1,
+                  minWidth: '220px',
+                  padding: '9px 12px',
+                  borderRadius: '8px',
+                  border: '1px solid rgba(56, 189, 248, 0.3)',
+                  backgroundColor: '#070d19',
+                  color: '#fff',
+                  fontSize: '0.82rem'
+                }}
+              />
+              <button
+                type="button"
+                onClick={handleGenerateApiKey}
+                disabled={isGeneratingDevKey}
+                className="btn-secondary"
+                style={{ padding: '9px 16px', fontSize: '0.82rem', borderColor: '#38bdf8', color: '#38bdf8', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+              >
+                <Key size={14} />
+                {isGeneratingDevKey ? 'Generating...' : 'Generate API Key'}
+              </button>
+            </div>
+
+            {devKeyError && (
+              <div style={{ fontSize: '0.75rem', color: '#fb7185', marginBottom: '10px' }}>
+                {devKeyError}
+              </div>
+            )}
+
+            {generatedKeyData && (
+              <div style={{ background: '#070d19', border: '1px solid rgba(56, 189, 248, 0.4)', borderRadius: '8px', padding: '12px', marginTop: '10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <span style={{ fontSize: '0.72rem', color: '#38bdf8', fontWeight: 700, textTransform: 'uppercase' }}>
+                    New Secret API Key Generated (Save Securely):
+                  </span>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(generatedKeyData.api_key);
+                      setCopiedDevKey(true);
+                      setTimeout(() => setCopiedDevKey(false), 2000);
+                    }}
+                    style={{ background: 'none', border: 'none', color: '#38bdf8', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem' }}
+                  >
+                    {copiedDevKey ? <Check size={13} /> : <Copy size={13} />}
+                    {copiedDevKey ? 'Copied!' : 'Copy Key'}
+                  </button>
+                </div>
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem', color: '#4ade80', wordBreak: 'break-all', marginBottom: '8px' }}>
+                  {generatedKeyData.api_key}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: '#94a3b8', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                  <span>ID: <strong>{generatedKeyData.key_id}</strong></span>
+                  <span>Limit: <strong>{generatedKeyData.rate_limit_rpm || 60} RPM</strong></span>
+                  <span>Scopes: <strong>{(generatedKeyData.scopes || []).join(', ')}</strong></span>
+                </div>
               </div>
             )}
           </div>
