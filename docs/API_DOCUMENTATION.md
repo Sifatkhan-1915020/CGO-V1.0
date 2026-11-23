@@ -496,10 +496,37 @@ The frontend, interactive Swagger UI (`/docs`), and OpenAPI schema (`/openapi.js
 * Output directory: `frontend/dist`
 * Live URL: [https://ocr-project-puce.vercel.app](https://ocr-project-puce.vercel.app)
 
-### 9.2 Running Backend on Dedicated Host / Kaggle / Colab
-For cloud GPU processing (Baidu Unlimited-OCR), start the Cloudflare tunnel:
+### 9.2 Running Remote Cloud GPU Worker (Kaggle / Colab)
+
+CG-OCR supports dual network connection options for remote GPU worker instances:
+
+#### Option A: Tailscale WireGuard Mesh (Recommended)
+Connects your Kaggle/Colab GPU instance directly into your private Tailnet via peer-to-peer WireGuard:
+```bash
+# On Kaggle / Colab Notebook Cell:
+!curl -fsSL https://tailscale.com/install.sh | sh
+!tailscale up --authkey=YOUR_EPHEMERAL_AUTH_KEY --hostname=kaggle-gpu
+!python colab_server.py
+```
+* **Endpoint URL**: `http://100.x.y.z:8000` (or MagicDNS `http://kaggle-gpu.tailnet-name.ts.net:8000`).
+* Set in `.env`: `TAILSCALE_URL=http://100.x.y.z:8000` or configure directly in the Web UI Settings.
+
+#### Option B: Cloudflare Quick Tunnel (Default)
+Generates an instant public HTTPS proxy URL without requiring an account:
 ```bash
 # On Colab / Kaggle
 python colab_server.py
 ```
-This generates a public Cloudflare tunnel URL (e.g., `https://xxxx.trycloudflare.com`). Set this URL in your `.env` or in the CareGuide Web UI Settings to route heavy OCR passes through the GPU worker.
+* **Endpoint URL**: `https://xxxx.trycloudflare.com`.
+* Set in `.env`: `CLOUDFLARE_TUNNEL_URL=https://xxxx.trycloudflare.com` or paste into Web UI Settings.
+
+#### ⚖️ Architectural Comparison: Tailscale vs. Cloudflare Tunnel
+
+| Vector | 🛡️ Tailscale WireGuard Mesh (Option) | 🌐 Cloudflare Quick Tunnel (Default) |
+|---|---|---|
+| **Public Exposure** | 🔒 **Zero public internet exposure** (restricted strictly to authenticated Tailnet devices). Immune to public crawlers and port scanners. | ⚠️ **Publicly accessible endpoint** (`trycloudflare.com` can be accessed by anyone on the internet unless protected by Cloudflare Access). |
+| **Request Timeout** | ⏱️ **Unlimited** (direct peer-to-peer connection without proxy cutoffs; ideal for 1,000-page batch runs). | ⚠️ **100s Hard Limit** (Cloudflare Free Tier terminates HTTP connections taking >100 seconds with `Error 524`). |
+| **Network Throughput** | 🚀 **Direct P2P WireGuard** (low latency UDP tunneling directly between Kaggle/Colab and your host). | ⚡ Routed through Cloudflare CDN edge data centers (subject to edge hair-pinning). |
+| **Endpoint Stability** | 📌 **Permanent static private IP** (`100.x.y.z`) or MagicDNS name that persists across notebook restarts. | ⚠️ **Random URL** generated on every tunnel restart. |
+| **Account Requirement** | Requires a free Tailscale account and generating an ephemeral auth key (`tskey-auth-...`). | ⚡ **Zero account required** (starts instantly with 1 command). |
+| **Installation** | Tailscale client must be installed on host and GPU machine. | Zero installation on client; only `cloudflared` binary on GPU machine. |

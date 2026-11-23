@@ -86,10 +86,57 @@ class OCRClient:
                 "confidence": 0.0
             }
 
+    @staticmethod
+    def detect_tunnel(url: Optional[str]) -> Dict[str, str]:
+        """Detect connection architecture (Tailscale, Cloudflare, Localhost, etc.)."""
+        if not url:
+            return {
+                "type": "none",
+                "label": "Standby / Local OCR",
+                "protocol": "In-Process / Direct",
+                "security": "Local Device Only",
+                "timeout": "Unlimited"
+            }
+        u = url.lower().strip()
+        if "ts.net" in u or "100." in u:
+            return {
+                "type": "tailscale",
+                "label": "Tailscale WireGuard Mesh",
+                "protocol": "WireGuard P2P (Encrypted)",
+                "security": "Zero Public Exposure (Tailnet Only)",
+                "timeout": "Unlimited (>100s Safe)"
+            }
+        elif "trycloudflare.com" in u or "cloudflare" in u:
+            return {
+                "type": "cloudflare",
+                "label": "Cloudflare Quick Tunnel",
+                "protocol": "HTTPS Reverse Proxy",
+                "security": "Public HTTPS Edge",
+                "timeout": "100s Cloudflare Limit"
+            }
+        elif "127.0.0.1" in u or "localhost" in u:
+            return {
+                "type": "localhost",
+                "label": "Localhost / Direct Loopback",
+                "protocol": "HTTP Loopback",
+                "security": "Local Device Only",
+                "timeout": "Unlimited"
+            }
+        else:
+            return {
+                "type": "custom",
+                "label": "Custom Remote URL",
+                "protocol": "HTTP/HTTPS",
+                "security": "Remote Host",
+                "timeout": "Standard"
+            }
+
     def health_check(self) -> Dict[str, Any]:
         """Check status of Kaggle GPU server, local RapidOCR, and Gemini Vision AI."""
+        tunnel_info = self.detect_tunnel(self.api_url)
         status_info = {
             "kaggle_gpu": None,
+            "tunnel_info": tunnel_info,
             "local_ocr": "available" if self._get_local_ocr() is not None else "unavailable",
             "gemini_fallback": "configured" if self.gemini_client.is_configured else "not_configured"
         }
@@ -99,11 +146,14 @@ class OCRClient:
                 with httpx.Client(timeout=10.0) as client:
                     resp = client.get(f"{self.api_url}/health")
                     if resp.status_code == 200:
-                        status_info["kaggle_gpu"] = resp.json()
+                        gpu_data = resp.json()
+                        if isinstance(gpu_data, dict):
+                            gpu_data["tunnel_info"] = tunnel_info
+                        status_info["kaggle_gpu"] = gpu_data
                     else:
-                        status_info["kaggle_gpu"] = {"status": "unhealthy", "code": resp.status_code}
+                        status_info["kaggle_gpu"] = {"status": "unhealthy", "code": resp.status_code, "tunnel_info": tunnel_info}
             except Exception as e:
-                status_info["kaggle_gpu"] = {"status": "error", "message": str(e)}
+                status_info["kaggle_gpu"] = {"status": "error", "message": str(e), "tunnel_info": tunnel_info}
 
         return status_info
 

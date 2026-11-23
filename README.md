@@ -267,7 +267,7 @@ flowchart LR
     </td>
     <td width="50%">
       <h3>Baidu/Unlimited-OCR Acceleration</h3>
-      <p>Processes dense scanned media using a 3B vision-language architecture with Reference Sliding Window Attention running on Kaggle/Colab Dual T4 GPUs. Tunnelled securely via zero-configuration Cloudflare HTTPS endpoints.</p>
+      <p>Processes dense scanned media using a 3B vision-language architecture with Reference Sliding Window Attention running on Kaggle/Colab Dual T4 GPUs. Tunnelled securely via <b>Tailscale WireGuard Mesh</b> (recommended for direct P2P encryption & unlimited timeouts) or <b>Cloudflare Quick Tunnel</b>.</p>
     </td>
   </tr>
   <tr>
@@ -291,6 +291,54 @@ flowchart LR
     </td>
   </tr>
 </table>
+
+---
+
+## 🌐 Remote GPU Tunneling: Tailscale WireGuard Mesh vs. Cloudflare Quick Tunnel
+
+CG-OCR natively supports dual remote GPU connection architectures for Kaggle and Google Colab workers:
+
+<div align="center">
+
+| Feature / Metric | 🛡️ Tailscale WireGuard Mesh (New Option!) | 🌐 Cloudflare Quick Tunnel (Default) |
+|---|---|---|
+| **Public Exposure** | 🔒 **Zero public internet exposure** (restricted strictly to authenticated Tailnet devices). Immune to public port scans and web crawlers. | ⚠️ **Publicly accessible URL** (`trycloudflare.com` is open to anyone on the web unless locked behind Cloudflare Access). |
+| **Request Timeout** | ⏱️ **Unlimited** (direct peer-to-peer connection without proxy cutoffs; ideal for 1,000-page batch runs). | ⚠️ **100s Hard Limit** (Cloudflare Free Tier terminates HTTP connections taking >100 seconds with `Error 524`). |
+| **Network Throughput** | 🚀 **Direct P2P WireGuard** (low latency UDP tunneling directly between Kaggle/Colab and your host). | ⚡ Routed through Cloudflare CDN edge data centers (subject to edge hair-pinning). |
+| **Endpoint Stability** | 📌 **Permanent static private IP** (`100.x.y.z`) or MagicDNS name that persists across notebook restarts. | ⚠️ **Random URL** generated on every tunnel restart. |
+| **Account Requirement** | Requires a free Tailscale account and generating an ephemeral auth key (`tskey-auth-...`). | ⚡ **Zero account required** (starts instantly with 1 command). |
+| **Kaggle / Colab Command** | `!curl -fsSL https://tailscale.com/install.sh \| sh && tailscale up --authkey=YOUR_KEY` | `!cloudflared tunnel --url http://localhost:8000` |
+
+</div>
+
+<details>
+<summary><b>Click to expand: Why use Tailscale? (Pros & Cons Analysis)</b></summary>
+<br/>
+
+#### 🛡️ Tailscale WireGuard Mesh
+
+* **Pros**:
+  1. **Zero Attack Surface**: The Kaggle or Colab GPU worker never listens on a public IP address. Only authenticated devices in your private Tailnet can access port 8000.
+  2. **No 100-Second Timeout Drops**: Cloudflare Free Tunnels terminate long-running HTTP connections after 100 seconds (`Error 524`). A heavy 1,000-page PDF or 50-page complex batch can take >100 seconds on GPU, which Cloudflare drops. Tailscale has no proxy timeouts.
+  3. **Direct Peer-to-Peer Speed**: Packets travel directly between your machine and the cloud GPU over WireGuard UDP, cutting out CDN proxy overhead and reducing batch upload latency.
+  4. **Fixed Static IP**: Once connected, the GPU node receives a permanent `100.x.y.z` IP or MagicDNS address (e.g. `http://kaggle-gpu:8000`), so you never need to copy-paste new URLs on every notebook restart.
+
+* **Cons**:
+  1. **Requires Auth Key**: You must create a free Tailscale account and generate an ephemeral auth key (`tskey-auth-...`).
+  2. **Dual-Node Requirement**: Tailscale must be active on both your local machine/server and inside the Kaggle/Colab notebook.
+
+#### 🌐 Cloudflare Quick Tunnel
+
+* **Pros**:
+  1. **Instant 0-Account Setup**: Run `cloudflared tunnel --url http://localhost:8000` without signing up, creating accounts, or managing keys.
+  2. **Universal Accessibility**: Generates a standard HTTPS link reachable by any client or collaborator without VPN setup.
+
+* **Cons**:
+  1. **100s Hard Timeout**: Drops any batch taking longer than 100s.
+  2. **Public Endpoint**: URL is publicly accessible over the open internet.
+  3. **Dynamic URL**: Generates a new random URL every time the notebook cell runs.
+
+</details>
 
 ---
 
@@ -453,6 +501,10 @@ SMTP_FROM=your_email@gmail.com
 
 # Redis Telemetry Engine (Optional, defaults to high-speed embedded cache)
 REDIS_URL=redis://127.0.0.1:6379/0
+
+# Optional Remote Cloud GPU Tunnel (Kaggle / Colab)
+# TAILSCALE_URL=http://100.x.y.z:8000 (Recommended WireGuard P2P)
+# CLOUDFLARE_TUNNEL_URL=https://xxxx.trycloudflare.com
 ```
 
 ### 3. Install Backend Dependencies

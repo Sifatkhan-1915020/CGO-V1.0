@@ -49,6 +49,15 @@ if os.path.exists(_env_file):
                 _k, _v = _line.split("=", 1)
                 os.environ[_k.strip()] = _v.strip()
 
+# Default remote GPU backend URL (Tailscale Mesh, Cloudflare Quick Tunnel, or Localhost)
+DEFAULT_GPU_URL = (
+    os.environ.get("TAILSCALE_URL", "").strip() or
+    os.environ.get("CLOUDFLARE_TUNNEL_URL", "").strip() or
+    os.environ.get("OCR_API_URL", "").strip() or
+    os.environ.get("KAGGLE_GPU_URL", "").strip() or
+    None
+)
+
 from fastapi.openapi.utils import get_openapi
 
 app = FastAPI(
@@ -88,7 +97,8 @@ def custom_openapi():
     openapi_schema["servers"] = [
         {"url": "/", "description": "Current Origin / Vercel Proxy"},
         {"url": "http://localhost:8008", "description": "Local FastAPI Backend"},
-        {"url": "http://127.0.0.1:8000", "description": "Kaggle / Colab GPU Cloud Tunnel"}
+        {"url": "http://100.x.y.z:8000", "description": "Tailscale WireGuard Mesh Remote GPU"},
+        {"url": "https://xxxx.trycloudflare.com", "description": "Cloudflare Quick Tunnel GPU"}
     ]
     app.openapi_schema = openapi_schema
     return app.openapi_schema
@@ -839,8 +849,8 @@ async def post_chat_message(payload: Dict[str, Any]):
 
 @app.get("/api/health")
 async def health(api_url: Optional[str] = None, gemini_api_key: Optional[str] = None):
-    """Check API server health, Kaggle GPU backend, Supabase, Redis, and Grafana."""
-    clean_url = api_url.strip() if api_url and api_url.strip() else None
+    """Check API server health, Kaggle GPU backend (Tailscale/Cloudflare/Local), Supabase, Redis, and Grafana."""
+    clean_url = (api_url.strip() if api_url and api_url.strip() else None) or DEFAULT_GPU_URL
     client = OCRClient(api_url=clean_url, gemini_api_key=gemini_api_key)
     ocr_status = client.health_check()
     sb_client = SupabaseClient()
@@ -1113,7 +1123,7 @@ async def extract_documents_stream(
             out_f.write(content)
         saved_paths.append(file_path)
 
-    clean_url = api_url.strip() if api_url and api_url.strip() else None
+    clean_url = (api_url.strip() if api_url and api_url.strip() else None) or DEFAULT_GPU_URL
     clean_gemini_key = (gemini_api_key.strip() if gemini_api_key and gemini_api_key.strip() else None) or os.environ.get("GEMINI_API_KEY", "").strip() or None
     print(f"[/api/extract/stream] Processing {len(saved_paths)} file(s). Gemini Key configured: {bool(clean_gemini_key)}")
 
@@ -1280,7 +1290,7 @@ async def extract_documents(
 
     log_event(f"Received {len(saved_paths)} file(s). Starting extraction pipeline.", "INIT")
 
-    clean_url = api_url.strip() if api_url and api_url.strip() else None
+    clean_url = (api_url.strip() if api_url and api_url.strip() else None) or DEFAULT_GPU_URL
     clean_gemini_key = (gemini_api_key.strip() if gemini_api_key and gemini_api_key.strip() else None) or os.environ.get("GEMINI_API_KEY", "").strip() or None
     print(f"[/api/extract/stream] Processing {len(saved_paths)} file(s). Gemini Key configured: {bool(clean_gemini_key)}")
 
@@ -2036,7 +2046,7 @@ async def v1_extract_documents(
                 out_f.write(content)
             saved_paths.append(file_path)
 
-        clean_url = api_url.strip() if api_url and api_url.strip() else None
+        clean_url = (api_url.strip() if api_url and api_url.strip() else None) or DEFAULT_GPU_URL
         clean_gemini_key = (gemini_api_key.strip() if gemini_api_key and gemini_api_key.strip() else None) or os.environ.get("GEMINI_API_KEY", "").strip() or None
 
         orchestrator = DocumentOrchestrator(

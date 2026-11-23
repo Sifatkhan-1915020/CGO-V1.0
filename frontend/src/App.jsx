@@ -62,6 +62,9 @@ export default function App() {
   const [showGeminiKey, setShowGeminiKey] = useState(false);
   const [batchSize, setBatchSize] = useState(20);
   const [showSettings, setShowSettings] = useState(false);
+  const [tunnelType, setTunnelType] = useState(() => localStorage.getItem('careguide_tunnel_type') || 'cloudflare');
+  const [showTunnelComparison, setShowTunnelComparison] = useState(false);
+  const [tunnelInfo, setTunnelInfo] = useState(null);
   const [serverStatus, setServerStatus] = useState('checking'); // 'healthy', 'offline', 'checking'
   const [gpuStatus, setGpuStatus] = useState(null); // 'online', 'unreachable', null
   const [isProcessing, setIsProcessing] = useState(false);
@@ -258,6 +261,9 @@ export default function App() {
           setGpuStatus(data.ocr_backend.kaggle_gpu.status === 'healthy' ? 'online' : 'offline');
         } else {
           setGpuStatus(null);
+        }
+        if (data.ocr_backend && data.ocr_backend.tunnel_info) {
+          setTunnelInfo(data.ocr_backend.tunnel_info);
         }
         if (data.supabase) {
           setSupabaseStatus(data.supabase);
@@ -1567,16 +1573,199 @@ export default function App() {
             </button>
           </div>
 
+          {/* Network Tunnel Architecture Selector */}
+          <div style={{ marginBottom: '18px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
+              <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                Remote GPU Connection Option (Kaggle / Colab):
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowTunnelComparison(!showTunnelComparison)}
+                style={{
+                  background: 'rgba(56, 189, 248, 0.1)',
+                  border: '1px solid rgba(56, 189, 248, 0.35)',
+                  color: 'var(--accent-blue)',
+                  borderRadius: '6px',
+                  padding: '4px 10px',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <HelpCircle size={14} />
+                {showTunnelComparison ? 'Hide Architecture Analysis' : 'Tailscale vs Cloudflare: Pros & Cons'}
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setTunnelType('cloudflare');
+                  localStorage.setItem('careguide_tunnel_type', 'cloudflare');
+                }}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '8px',
+                  border: tunnelType === 'cloudflare' ? '1px solid #38bdf8' : '1px solid var(--border-color)',
+                  backgroundColor: tunnelType === 'cloudflare' ? 'rgba(56, 189, 248, 0.15)' : '#070d19',
+                  color: tunnelType === 'cloudflare' ? '#38bdf8' : 'var(--text-muted)',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <Radio size={14} />
+                Cloudflare Quick Tunnel (Default)
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setTunnelType('tailscale');
+                  localStorage.setItem('careguide_tunnel_type', 'tailscale');
+                }}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '8px',
+                  border: tunnelType === 'tailscale' ? '1px solid #10b981' : '1px solid var(--border-color)',
+                  backgroundColor: tunnelType === 'tailscale' ? 'rgba(16, 185, 129, 0.15)' : '#070d19',
+                  color: tunnelType === 'tailscale' ? '#34d399' : 'var(--text-muted)',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <ShieldCheck size={14} />
+                Tailscale WireGuard Mesh (New Option!)
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setTunnelType('local');
+                  localStorage.setItem('careguide_tunnel_type', 'local');
+                }}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '8px',
+                  border: tunnelType === 'local' ? '1px solid #c084fc' : '1px solid var(--border-color)',
+                  backgroundColor: tunnelType === 'local' ? 'rgba(192, 132, 252, 0.15)' : '#070d19',
+                  color: tunnelType === 'local' ? '#c084fc' : 'var(--text-muted)',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <Cpu size={14} />
+                Direct Localhost (Port 8000)
+              </button>
+            </div>
+          </div>
+
+          {/* Pros & Cons Educational Comparison Card */}
+          {showTunnelComparison && (
+            <div style={{
+              marginBottom: '20px',
+              padding: '16px',
+              borderRadius: '12px',
+              background: 'rgba(15, 23, 42, 0.95)',
+              border: '1px solid rgba(56, 189, 248, 0.35)',
+              fontSize: '0.82rem',
+              color: '#cbd5e1'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                <Info size={18} color="#38bdf8" />
+                <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 700, color: '#f8fafc' }}>
+                  Architecture Comparison: Tailscale WireGuard Mesh vs. Cloudflare Quick Tunnel
+                </h4>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                {/* Tailscale Column */}
+                <div style={{ padding: '14px', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px', color: '#34d399', fontWeight: 700, fontSize: '0.88rem' }}>
+                    <ShieldCheck size={16} />
+                    Tailscale WireGuard Mesh (Option)
+                  </div>
+                  <div style={{ marginBottom: '8px' }}>
+                    <strong style={{ color: '#34d399', fontSize: '0.75rem', textTransform: 'uppercase' }}>Pros (Advantages):</strong>
+                    <ul style={{ margin: '4px 0 8px 18px', padding: 0, lineHeight: 1.5, fontSize: '0.8rem' }}>
+                      <li><strong>Zero Public Exposure:</strong> Remote GPU is isolated inside your private Tailnet; immune to bots, port scans, and web crawlers.</li>
+                      <li><strong>No 100s Timeout:</strong> Direct P2P avoids Cloudflare free-tier's 100-second <code>Error 524</code> limit—ideal for heavy 1,000-page batch runs.</li>
+                      <li><strong>Direct P2P Throughput:</strong> Low latency UDP WireGuard tunnels between Kaggle/Colab and host without proxy hair-pinning.</li>
+                      <li><strong>Persistent Static IP / MagicDNS:</strong> Fixed <code>100.x.y.z</code> or <code>kaggle-gpu.ts.net</code> that doesn't change every session.</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <strong style={{ color: '#f87171', fontSize: '0.75rem', textTransform: 'uppercase' }}>Cons (Trade-offs):</strong>
+                    <ul style={{ margin: '4px 0 0 18px', padding: 0, lineHeight: 1.5, fontSize: '0.8rem' }}>
+                      <li>Requires a free Tailscale account and generating an auth key (<code>tskey-auth-...</code>).</li>
+                      <li>Both local machine and Kaggle/Colab notebook must authenticate to the same Tailnet.</li>
+                    </ul>
+                  </div>
+                </div>
+
+                {/* Cloudflare Column */}
+                <div style={{ padding: '14px', borderRadius: '8px', background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.25)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px', color: '#38bdf8', fontWeight: 700, fontSize: '0.88rem' }}>
+                    <Radio size={16} />
+                    Cloudflare Quick Tunnel (Default)
+                  </div>
+                  <div style={{ marginBottom: '8px' }}>
+                    <strong style={{ color: '#38bdf8', fontSize: '0.75rem', textTransform: 'uppercase' }}>Pros (Advantages):</strong>
+                    <ul style={{ margin: '4px 0 8px 18px', padding: 0, lineHeight: 1.5, fontSize: '0.8rem' }}>
+                      <li><strong>Zero-Account Setup:</strong> Run 1 shell command on Kaggle/Colab without any signup, account, or API key.</li>
+                      <li><strong>Universal Public Access:</strong> Accessible from any device or browser without installing software.</li>
+                      <li><strong>Instant HTTPS:</strong> Auto-provisions free Cloudflare SSL certificate out of the box.</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <strong style={{ color: '#f87171', fontSize: '0.75rem', textTransform: 'uppercase' }}>Cons (Trade-offs):</strong>
+                    <ul style={{ margin: '4px 0 0 18px', padding: 0, lineHeight: 1.5, fontSize: '0.8rem' }}>
+                      <li><strong>100s Hard Timeout:</strong> Requests taking &gt;100s are terminated by Cloudflare with <code>524 Gateway Timeout</code>.</li>
+                      <li><strong>Public URL Exposure:</strong> <code>trycloudflare.com</code> URL is publicly reachable if discovered.</li>
+                      <li><strong>Random Dynamic URL:</strong> Subdomain changes on every notebook restart.</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr', gap: '20px', alignItems: 'flex-end' }}>
             <div>
               <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '6px' }}>
-                Baidu/Unlimited-OCR Kaggle Cloudflare Tunnel URL:
+                {tunnelType === 'tailscale'
+                  ? 'Tailscale Mesh Node / MagicDNS URL:'
+                  : tunnelType === 'local'
+                  ? 'Local / Direct GPU Server URL:'
+                  : 'Baidu/Unlimited-OCR Kaggle Cloudflare Tunnel URL:'}
               </label>
               <input
                 type="text"
                 value={apiUrl}
                 onChange={(e) => setApiUrl(e.target.value)}
-                placeholder="https://xxxx.trycloudflare.com (or leave empty for native/mock)"
+                placeholder={
+                  tunnelType === 'tailscale'
+                    ? 'http://100.x.y.z:8000 or http://kaggle-gpu.tailnet-name.ts.net:8000'
+                    : tunnelType === 'local'
+                    ? 'http://127.0.0.1:8000'
+                    : 'https://xxxx.trycloudflare.com (or leave empty for native/mock)'
+                }
                 style={{
                   width: '100%',
                   padding: '10px 14px',
@@ -1588,6 +1777,13 @@ export default function App() {
                   fontSize: '0.85rem'
                 }}
               />
+              <div style={{ marginTop: '4px', fontSize: '0.72rem', color: tunnelType === 'tailscale' ? '#34d399' : 'var(--text-muted)' }}>
+                {tunnelType === 'tailscale'
+                  ? '🔒 Direct WireGuard P2P • No 100s timeout limit • Zero public internet exposure'
+                  : tunnelType === 'local'
+                  ? '💻 Direct host loopback execution (Port 8000)'
+                  : '🌐 Public HTTPS endpoint • Zero-account setup (Cloudflare 100s timeout applies)'}
+              </div>
             </div>
 
             <div>
@@ -1617,6 +1813,20 @@ export default function App() {
                 <RefreshCw size={16} />
                 Ping Health Check
               </button>
+            </div>
+          </div>
+
+          {/* Quick Colab / Kaggle Command Snippet */}
+          <div style={{ marginTop: '14px', padding: '10px 14px', borderRadius: '8px', background: '#070d19', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+              <span style={{ fontWeight: 600, color: '#f8fafc' }}>
+                {tunnelType === 'tailscale' ? 'Start Tailscale on Kaggle / Colab GPU:' : 'Start Cloudflare Tunnel on Kaggle / Colab GPU:'}
+              </span>{' '}
+              <code style={{ color: tunnelType === 'tailscale' ? '#34d399' : '#38bdf8', marginLeft: '6px' }}>
+                {tunnelType === 'tailscale'
+                  ? '!curl -fsSL https://tailscale.com/install.sh | sh && tailscale up --authkey=YOUR_KEY --hostname=kaggle-gpu'
+                  : '!wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb && dpkg -i cloudflared-linux-amd64.deb && cloudflared tunnel --url http://localhost:8000'}
+              </code>
             </div>
           </div>
 
@@ -3613,11 +3823,23 @@ export default function App() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
                 <span className="pulse-dot" style={{ backgroundColor: gpuStatus === 'online' ? '#34d399' : '#f59e0b' }} />
                 <span style={{ fontSize: '1.1rem', fontWeight: 800, color: '#ffffff' }}>
-                  {gpuStatus === 'online' ? 'Kaggle GPU Active' : 'Standby / Local OCR'}
+                  {gpuStatus === 'online' ? (
+                    (apiUrl && (apiUrl.includes('100.') || apiUrl.includes('ts.net')))
+                      ? 'Kaggle GPU Active (Tailscale WireGuard)'
+                      : (apiUrl && apiUrl.includes('trycloudflare.com'))
+                      ? 'Kaggle GPU Active (Cloudflare Tunnel)'
+                      : 'Kaggle GPU Active (Remote)'
+                  ) : 'Standby / Local OCR'}
                 </span>
               </div>
               <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                Baidu/Unlimited-OCR Worker • 1600px cv2.INTER_AREA (90% Bandwidth Saved)
+                {gpuStatus === 'online' ? (
+                  (apiUrl && (apiUrl.includes('100.') || apiUrl.includes('ts.net')))
+                    ? '🔒 Tailscale Mesh • P2P WireGuard Encrypted • No 100s Timeout • Zero Public Exposure'
+                    : (apiUrl && apiUrl.includes('trycloudflare.com'))
+                    ? '🌐 Cloudflare Quick Tunnel • Public HTTPS Edge (100s Timeout Limit)'
+                    : 'Baidu/Unlimited-OCR Worker • 1600px cv2.INTER_AREA (90% Bandwidth Saved)'
+                ) : 'Baidu/Unlimited-OCR Worker • 1600px cv2.INTER_AREA (90% Bandwidth Saved)'}
               </div>
             </div>
 
