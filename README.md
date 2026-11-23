@@ -13,7 +13,7 @@
 [![Grafana](https://img.shields.io/badge/Grafana-Prometheus_OpenMetrics-F46800.svg?style=for-the-badge&logo=grafana&logoColor=white)](https://grafana.com)
 [![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL_Cloud-3ECF8E.svg?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
-[![UI Style](https://img.shields.io/badge/Design-Apple_Dark_Minimalist-000000.svg?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/Sifatkhan-1915020/OCR-Project)
+[![UI Style](https://img.shields.io/badge/Design-Apple_Dark_Minimalist-000000.svg?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/Sifatkhan-1915020/CGO-V1.0)
 
 <br/>
 
@@ -392,8 +392,8 @@ curl -O http://127.0.0.1:8008/api/telemetry/grafana/export
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/Sifatkhan-1915020/OCR-Project.git
-cd OCR-Project
+git clone https://github.com/Sifatkhan-1915020/CGO-V1.0.git
+cd CGO-V1.0
 ```
 
 ### 2. Configure Environment Variables
@@ -474,8 +474,8 @@ npm --prefix frontend run dev
 
 The frontend is optimized for continuous deployment on **Vercel**:
 
-1. Push your changes to GitHub: **`https://github.com/Sifatkhan-1915020/OCR-Project`**.
-2. Open **[vercel.com/new](https://vercel.com/new)** and import `OCR-Project`.
+1. Push your changes to GitHub: **`https://github.com/Sifatkhan-1915020/CGO-V1.0`**.
+2. Open **[vercel.com/new](https://vercel.com/new)** and import `CGO-V1.0`.
 3. Set **Root Directory** to `frontend` (Framework Preset: `Vite`).
 4. Add environment variables if required (`VITE_API_URL` pointing to your hosted FastAPI backend).
 5. Click **Deploy**. Vercel will build and assign an instant production URL with global CDN acceleration.
