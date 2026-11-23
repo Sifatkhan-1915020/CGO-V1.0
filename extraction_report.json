@@ -1,0 +1,338 @@
+{
+  "batch_id": "batch_1795049955",
+  "total_files": 6,
+  "total_pages": 6,
+  "total_sheets": 3,
+  "successful_files": 5,
+  "corrupted_or_failed_files": 1,
+  "total_duration_sec": 25.63,
+  "average_throughput_pages_per_sec": 0.23,
+  "checkpoint_resumed_count": 0,
+  "documents": [
+    {
+      "doc_id": "d8a624401015",
+      "filename": "corrupted_scan.pdf",
+      "file_path": "C:\\Users\\User\\Documents\\CareGuide\\demo_samples\\corrupted_scan.pdf",
+      "file_type": "PDF",
+      "mime_type": "application/pdf",
+      "file_size_bytes": 36,
+      "status": "CORRUPTED",
+      "processing_time_ms": 108.25,
+      "total_pages_or_sheets": 1,
+      "pages": [
+        {
+          "index": 1,
+          "type": "FAILED",
+          "status": "CORRUPTED",
+          "text": "",
+          "blocks": [],
+          "tables": [],
+          "preprocessing_applied": [],
+          "confidence": 1.0,
+          "elapsed_ms": 0.0,
+          "error": "Unrecoverable PDF corruption: Failed to open file 'C:\\\\Users\\\\User\\\\Documents\\\\CareGuide\\\\demo_samples\\\\corrupted_scan.pdf' as type pdf."
+        }
+      ],
+      "sheets": [],
+      "warnings": [],
+      "error": null
+    },
+    {
+      "doc_id": "ec18dba3f5df",
+      "filename": "hospital_data.xlsx",
+      "file_path": "C:\\Users\\User\\Documents\\CareGuide\\demo_samples\\hospital_data.xlsx",
+      "file_type": "SPREADSHEET",
+      "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "file_size_bytes": 5552,
+      "status": "SUCCESS",
+      "processing_time_ms": 95.79,
+      "total_pages_or_sheets": 2,
+      "pages": [],
+      "sheets": [
+        {
+          "name": "Patients",
+          "index": 1,
+          "row_count": 2,
+          "col_count": 4,
+          "columns": [
+            "PatientID",
+            "Full_Name",
+            "Department",
+            "Admission_Date"
+          ],
+          "data": [
+            {
+              "PatientID": "PT-001",
+              "Full_Name": "Elena Rostova",
+              "Department": "Cardiology",
+              "Admission_Date": "2026-11-01"
+            },
+            {
+              "PatientID": "PT-002",
+              "Full_Name": "Marcus Vance",
+              "Department": "Neurology",
+              "Admission_Date": "2026-11-04"
+            }
+          ],
+          "status": "SUCCESS",
+          "error": null
+        },
+        {
+          "name": "Bed_Occupancy",
+          "index": 2,
+          "row_count": 2,
+          "col_count": 4,
+          "columns": [
+            "Ward",
+            "Total_Beds",
+            "Occupied",
+            "Available"
+          ],
+          "data": [
+            {
+              "Ward": "ICU",
+              "Total_Beds": 20,
+              "Occupied": 18,
+              "Available": 2
+            },
+            {
+              "Ward": "General_A",
+              "Total_Beds": 50,
+              "Occupied": 42,
+              "Available": 8
+            }
+          ],
+          "status": "SUCCESS",
+          "error": null
+        }
+      ],
+      "warnings": [],
+      "error": null
+    },
+    {
+      "doc_id": "d2a652d6b5ef",
+      "filename": "lab_report.pdf",
+      "file_path": "C:\\Users\\User\\Documents\\CareGuide\\demo_samples\\lab_report.pdf",
+      "file_type": "PDF",
+      "mime_type": "application/pdf",
+      "file_size_bytes": 1908,
+      "status": "SUCCESS",
+      "processing_time_ms": 196.95,
+      "total_pages_or_sheets": 2,
+      "pages": [
+        {
+          "index": 1,
+          "type": "DIGITAL_TEXT",
+          "status": "SUCCESS",
+          "text": "CLINICAL LAB REPORT - PATIENT #4920\nTest: Comprehensive Metabolic Panel (CMP)\nResult: Normal. Glucose: 92 mg/dL. Calcium: 9.6 mg/dL.",
+          "blocks": [
+            {
+              "text": "CLINICAL LAB REPORT - PATIENT #4920",
+              "bbox": {
+                "x0": 50.0,
+                "y0": 44.94999694824219,
+                "x1": 319.9759826660156,
+                "y1": 64.18599700927734
+              },
+              "confidence": 1.0
+            },
+            {
+              "text": "Test: Comprehensive Metabolic Panel (CMP)",
+              "bbox": {
+                "x0": 50.0,
+                "y0": 78.17500305175781,
+                "x1": 270.67095947265625,
+                "y1": 93.28900146484375
+              },
+              "confidence": 1.0
+            },
+            {
+              "text": "Result: Normal. Glucose: 92 mg/dL. Calcium: 9.6 mg/dL.",
+              "bbox": {
+                "x0": 50.0,
+                "y0": 99.25,
+                "x1": 300.0899353027344,
+                "y1": 112.98999786376953
+              },
+              "confidence": 1.0
+            }
+          ],
+          "tables": [],
+          "preprocessing_applied": [],
+          "confidence": 1.0,
+          "elapsed_ms": 8.73,
+          "error": null
+        },
+        {
+          "index": 2,
+          "type": "DIGITAL_TEXT",
+          "status": "SUCCESS",
+          "text": "PHYSICIAN NOTES - CONTINUED (PAGE 2)\nPatient reports good compliance with dietary guidelines.",
+          "blocks": [
+            {
+              "text": "PHYSICIAN NOTES - CONTINUED (PAGE 2)",
+              "bbox": {
+                "x0": 50.0,
+                "y0": 44.94999694824219,
+                "x1": 337.0419921875,
+                "y1": 64.18599700927734
+              },
+              "confidence": 1.0
+            },
+            {
+              "text": "Patient reports good compliance with dietary guidelines.",
+              "bbox": {
+                "x0": 50.0,
+                "y0": 78.17500305175781,
+                "x1": 322.06292724609375,
+                "y1": 93.28900146484375
+              },
+              "confidence": 1.0
+            }
+          ],
+          "tables": [],
+          "preprocessing_applied": [],
+          "confidence": 1.0,
+          "elapsed_ms": 4.02,
+          "error": null
+        }
+      ],
+      "sheets": [],
+      "warnings": [],
+      "error": null
+    },
+    {
+      "doc_id": "01a4aa80875d",
+      "filename": "prescription.jpg",
+      "file_path": "C:\\Users\\User\\Documents\\CareGuide\\demo_samples\\prescription.jpg",
+      "file_type": "IMAGE",
+      "mime_type": "image/jpeg",
+      "file_size_bytes": 8396,
+      "status": "SUCCESS",
+      "processing_time_ms": 8108.51,
+      "total_pages_or_sheets": 1,
+      "pages": [
+        {
+          "index": 1,
+          "type": "UNLIMITED_OCR",
+          "status": "SUCCESS",
+          "text": "Error: Expected all tensors to be on the same device, but got tensors is on cuda:0, different from other tensors on cuda:1 (when checking argument in method wrapper_CUDA_cat)",
+          "blocks": [],
+          "tables": [],
+          "preprocessing_applied": [
+            "upscale_2.4x",
+            "shadow_removal",
+            "denoise",
+            "adaptive_binarization"
+          ],
+          "confidence": 0.96,
+          "elapsed_ms": 8070.45,
+          "error": null
+        }
+      ],
+      "sheets": [],
+      "warnings": [],
+      "error": null
+    },
+    {
+      "doc_id": "bffb12882dfe",
+      "filename": "scan_multipage.tiff",
+      "file_path": "C:\\Users\\User\\Documents\\CareGuide\\demo_samples\\scan_multipage.tiff",
+      "file_type": "IMAGE",
+      "mime_type": "image/tiff",
+      "file_size_bytes": 960288,
+      "status": "SUCCESS",
+      "processing_time_ms": 15748.75,
+      "total_pages_or_sheets": 2,
+      "pages": [
+        {
+          "index": 1,
+          "type": "UNLIMITED_OCR",
+          "status": "SUCCESS",
+          "text": "Error: Expected all tensors to be on the same device, but got tensors is on cuda:0, different from other tensors on cuda:1 (when checking argument in method wrapper_CUDA_cat)",
+          "blocks": [],
+          "tables": [],
+          "preprocessing_applied": [
+            "upscale_3.0x",
+            "shadow_removal",
+            "denoise",
+            "adaptive_binarization"
+          ],
+          "confidence": 0.96,
+          "elapsed_ms": 9492.07,
+          "error": null
+        },
+        {
+          "index": 2,
+          "type": "UNLIMITED_OCR",
+          "status": "SUCCESS",
+          "text": "Error: Expected all tensors to be on the same device, but got tensors is on cuda:0, different from other tensors on cuda:1 (when checking argument in method wrapper_CUDA_cat)",
+          "blocks": [],
+          "tables": [],
+          "preprocessing_applied": [
+            "upscale_3.0x",
+            "shadow_removal",
+            "denoise",
+            "adaptive_binarization"
+          ],
+          "confidence": 0.96,
+          "elapsed_ms": 6183.72,
+          "error": null
+        }
+      ],
+      "sheets": [],
+      "warnings": [],
+      "error": null
+    },
+    {
+      "doc_id": "5a8b384dcf0e",
+      "filename": "vital_signs.csv",
+      "file_path": "C:\\Users\\User\\Documents\\CareGuide\\demo_samples\\vital_signs.csv",
+      "file_type": "SPREADSHEET",
+      "mime_type": "text/csv",
+      "file_size_bytes": 135,
+      "status": "SUCCESS",
+      "processing_time_ms": 33.44,
+      "total_pages_or_sheets": 1,
+      "pages": [],
+      "sheets": [
+        {
+          "name": "CSV",
+          "index": 1,
+          "row_count": 2,
+          "col_count": 6,
+          "columns": [
+            "Timestamp",
+            "PatientID",
+            "HeartRate",
+            "SystolicBP",
+            "DiastolicBP",
+            "SpO2"
+          ],
+          "data": [
+            {
+              "Timestamp": "2026-11-18 08:00",
+              "PatientID": "PT-001",
+              "HeartRate": "72",
+              "SystolicBP": "120",
+              "DiastolicBP": "80",
+              "SpO2": "98"
+            },
+            {
+              "Timestamp": "2026-11-18 09:00",
+              "PatientID": "PT-001",
+              "HeartRate": "75",
+              "SystolicBP": "122",
+              "DiastolicBP": "82",
+              "SpO2": "99"
+            }
+          ],
+          "status": "SUCCESS",
+          "error": null
+        }
+      ],
+      "warnings": [],
+      "error": null
+    }
+  ]
+}

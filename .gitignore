@@ -1,0 +1,60 @@
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.venv
+venv/
+ENV/
+
+# Databases & Runtime State
+*.db
+*.sqlite
+*.sqlite3
+careguide_checkpoint.db
+careguide_system.db
+test.db
+careguide_stream.jsonl
+
+# Node & Frontend
+node_modules/
+frontend/node_modules/
+frontend/dist/
+.npm
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Output & Temp folders
+demo_output/
+output/
+deploy_github.py
+push_repo.ps1
+*.ps1
+*.log
+.DS_Store
+Thumbs.db

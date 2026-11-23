@@ -1,0 +1,3 @@
+Invoice Number	Invoice Date	Supplier Name	Customer Name	Item Description	Quantity	Unit Price	Line Total	Subtotal	Tax	Total	Currency
+TSV-2026-0441	2026-11-19	Bengal IT Supplies	Apex Footwear Ltd	CAT6 Network Cable 305m	2	115.00	230.00	490.00	49.00	539.00	USD
+TSV-2026-0441	2026-11-19	Bengal IT Supplies	Apex Footwear Ltd	Gigabit Switch 8-Port	4	65.00	260.00	490.00	49.00	539.00	USD

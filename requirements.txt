@@ -1,0 +1,25 @@
+# CareGuide Multi-Format Document & Tabular Extraction Engine
+# Core dependencies
+pydantic>=2.0.0
+pymupdf>=1.23.0
+openpyxl>=3.1.0
+xlrd>=2.0.1
+pandas>=2.0.0
+pillow>=10.0.0
+opencv-python-headless>=4.8.0
+tifffile>=2023.0.0
+charset-normalizer>=3.0.0
+httpx>=0.25.0
+tqdm>=4.66.0
+rapidocr-onnxruntime>=1.3.0
+fastapi>=0.100.0
+uvicorn>=0.23.0
+supabase>=2.34.0
+redis>=5.0.0
+prometheus-client>=0.20.0
+
+# Optional / Cloud Server dependencies (for colab_server / kaggle_server)
+# transformers>=4.36.0,<5.0.0
+# accelerate>=0.25.0
+# torch>=2.0.0
+# torchvision>=0.15.0
