@@ -12,6 +12,7 @@
 [![Redis](https://img.shields.io/badge/Redis-7.2_Telemetry-DC382D.svg?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io)
 [![Grafana](https://img.shields.io/badge/Grafana-Prometheus_OpenMetrics-F46800.svg?style=for-the-badge&logo=grafana&logoColor=white)](https://grafana.com)
 [![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL_Cloud-3ECF8E.svg?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com)
+[![Swagger](https://img.shields.io/badge/Swagger-OpenAPI_3.1-85EA2D.svg?style=for-the-badge&logo=swagger&logoColor=black)](https://ocr-project-puce.vercel.app/docs)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![UI Style](https://img.shields.io/badge/Design-Apple_Dark_Minimalist-000000.svg?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/Sifatkhan-1915020/CGO-V1.0)
 
@@ -467,6 +468,33 @@ npm --prefix frontend run dev
 | `POST` | `/api/supabase/save/invoices` | Persist validated invoices to Supabase PostgreSQL | Session Token |
 | `GET` | `/api/chat/messages` | Fetch persistent team collaboration messages | Session Token |
 | `POST` | `/api/chat/messages` | Post new message to employee collaboration channel | Session Token |
+
+---
+
+## 🚀 Developer REST API & Interactive Swagger UI
+
+CareGuide provides a high-throughput developer REST API (`/v1`) with cryptographic API key authentication, sliding-window rate limiting, and an interactive **Swagger UI** deployed globally on Vercel:
+
+* **Interactive Swagger UI Portal**: **[https://ocr-project-puce.vercel.app/docs](https://ocr-project-puce.vercel.app/docs)**
+* **Alternative Route**: **[https://ocr-project-puce.vercel.app/swagger](https://ocr-project-puce.vercel.app/swagger)**
+* **OpenAPI 3.1 Specification**: **[https://ocr-project-puce.vercel.app/openapi.json](https://ocr-project-puce.vercel.app/openapi.json)**
+* **Complete API & Setup Manual**: **[`docs/API_DOCUMENTATION.md`](docs/API_DOCUMENTATION.md)**
+
+### Key Management CLI (`create_key.py`)
+```bash
+# Generate a live API key for your application
+python create_key.py my-app --rpm 60 --limit 10000 --scopes extract,invoices
+
+# Inspect active keys & usage telemetry
+python create_key.py --list
+```
+
+### Quick cURL Extraction Example
+```bash
+curl -X POST "https://ocr-project-puce.vercel.app/v1/extract" \
+     -H "X-API-Key: cg_live_YOUR_KEY" \
+     -F "files=@document.pdf"
+```
 
 ---
 
