@@ -10,6 +10,8 @@ import base64
 from typing import Optional, Dict, Any, Tuple, List, Callable
 import httpx
 
+from .usage_tracker import usage_tracker, extract_gemini_usage
+
 DEFAULT_BANGLA_PROMPT = (
     "You are an expert bilingual OCR and document transcription engine specializing in "
     "Bengali / Bangla (বাংলা) and English documents, including medical prescriptions, "
@@ -242,10 +244,23 @@ class GeminiOCRClient:
                     if response.text and response.text.strip():
                         demuxed = demultiplex_packet_response(response.text.strip(), packet)
                         elapsed_ms = round((time.time() - start_t) * 1000, 2)
+                        usage = extract_gemini_usage(response)
+                        feature_name = "manual_reocr" if any(e.get("trigger_reason") == "manual_user_reocr" for e in packet) else "ocr_fallback"
+                        usage_tracker.record_call(
+                            feature=feature_name,
+                            model=model_name,
+                            prompt_tokens=usage["prompt_tokens"],
+                            candidates_tokens=usage["candidates_tokens"],
+                            total_tokens=usage["total_tokens"],
+                            latency_ms=elapsed_ms,
+                            status="success",
+                            items_count=n,
+                        )
                         for r in demuxed:
                             r["elapsed_ms"] = elapsed_ms
                             r["engine"] = f"Gemini Vision AI ({model_name} - Packet Fallback)"
                             r["engine_model"] = model_name
+                            r["usage"] = usage
                         return demuxed
                 except Exception:
                     continue
@@ -285,17 +300,38 @@ class GeminiOCRClient:
                             if raw_text:
                                 demuxed = demultiplex_packet_response(raw_text, packet)
                                 elapsed_ms = round((time.time() - start_t) * 1000, 2)
+                                usage = extract_gemini_usage(data)
+                                feature_name = "manual_reocr" if any(e.get("trigger_reason") == "manual_user_reocr" for e in packet) else "ocr_fallback"
+                                usage_tracker.record_call(
+                                    feature=feature_name,
+                                    model=model_name,
+                                    prompt_tokens=usage["prompt_tokens"],
+                                    candidates_tokens=usage["candidates_tokens"],
+                                    total_tokens=usage["total_tokens"],
+                                    latency_ms=elapsed_ms,
+                                    status="success",
+                                    items_count=n,
+                                )
                                 for r in demuxed:
                                     r["elapsed_ms"] = elapsed_ms
                                     r["engine"] = f"Gemini Vision AI ({model_name} - Packet Fallback)"
                                     r["engine_model"] = model_name
+                                    r["usage"] = usage
                                 return demuxed
                     else:
                         last_error = f"HTTP {resp.status_code}: {resp.text[:120]}"
             except Exception as e:
                 last_error = str(e)
 
-        # If all Gemini models failed, return original elements with error note
+        # If all Gemini models failed, record failed attempt and return original elements with error note
+        feature_name = "manual_reocr" if any(e.get("trigger_reason") == "manual_user_reocr" for e in packet) else "ocr_fallback"
+        usage_tracker.record_call(
+            feature=feature_name,
+            model=FALLBACK_MODELS[0],
+            latency_ms=round((time.time() - start_t) * 1000, 2),
+            status="failed",
+            items_count=n,
+        )
         return [
             {
                 "element_id": elem["element_id"],

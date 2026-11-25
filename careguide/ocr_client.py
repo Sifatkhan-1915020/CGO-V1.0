@@ -8,6 +8,7 @@ import time
 from typing import Optional, Dict, Any, List, Tuple
 import httpx
 from .gemini_fallback import GeminiOCRClient
+from .usage_tracker import usage_tracker
 
 
 class OCRClient:
@@ -192,6 +193,7 @@ class OCRClient:
             url = f"{self.api_url}/ocr/page"
             files = {"file": (filename, image_bytes, "image/png")}
             data = {"prompt": prompt} if prompt else {}
+            t_req = time.time()
 
             for attempt in range(1, self.max_retries + 1):
                 try:
@@ -203,6 +205,14 @@ class OCRClient:
                             if not self._is_error_text(extracted_text):
                                 res_json["engine"] = "Baidu Unlimited-OCR (GPU)"
                                 initial_res = res_json
+                                usage_tracker.record_call(
+                                    feature="baidu_ocr",
+                                    model="baidu-unlimited-ocr",
+                                    latency_ms=(time.time() - t_req) * 1000.0,
+                                    status="success",
+                                    provider="ocr",
+                                    items_count=1,
+                                )
                                 break
                         elif resp.status_code in (502, 503, 504):
                             time.sleep(0.5)
@@ -243,6 +253,7 @@ class OCRClient:
             files = [("files", (fname, img_bytes, "image/jpeg")) for fname, img_bytes in pages]
             data = {"prompt": prompt} if prompt else {}
             batch_timeout = max(self.timeout, len(pages) * 5.0)
+            t_req = time.time()
 
             try:
                 with httpx.Client(timeout=batch_timeout) as client:
@@ -250,7 +261,18 @@ class OCRClient:
                     if resp.status_code == 200:
                         raw_results = resp.json().get("results", [])
                         if len(raw_results) == len(pages):
+                            for r in raw_results:
+                                if isinstance(r, dict) and not r.get("engine"):
+                                    r["engine"] = "Baidu Unlimited-OCR (GPU)"
                             results = raw_results
+                            usage_tracker.record_call(
+                                feature="baidu_ocr",
+                                model="baidu-unlimited-ocr",
+                                latency_ms=(time.time() - t_req) * 1000.0,
+                                status="success",
+                                provider="ocr",
+                                items_count=len(pages),
+                            )
             except Exception:
                 pass
 

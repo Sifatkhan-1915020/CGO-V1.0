@@ -14,6 +14,7 @@ import zipfile
 import tempfile
 import asyncio
 import threading
+from collections import deque
 from typing import List, Optional, Dict, Any, Tuple
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,7 +24,9 @@ import pandas as pd
 from careguide import DocumentOrchestrator
 from careguide.ocr_client import OCRClient
 from careguide.gemini_fallback import GeminiOCRClient
-from careguide.schema import ProcessingStatus
+from careguide.doc_analyzer import DocumentAnalyzer
+from careguide.usage_tracker import usage_tracker
+from careguide.schema import ProcessingStatus, ExtractionType
 from careguide.invoice_extractor import InvoiceExtractor, ValidatedInvoice, InvoiceData
 from careguide.supabase_client import SupabaseClient
 from careguide.api_keys import (
@@ -118,9 +121,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# In-memory storage for active job logs & results
+# In-memory storage for active job logs, results & uploaded file sessions for Re-OCR
 JOBS: Dict[str, Dict[str, Any]] = {}
 INVOICE_EXCEL_CACHE: Dict[str, bytes] = {}
+EXTRACTION_FILE_SESSIONS: Dict[str, Dict[str, str]] = {}
+
+
+def register_extraction_session(saved_paths: List[str]) -> str:
+    """Store uploaded file paths under a session ID so users can trigger manual Gemini Re-OCR."""
+    session_id = f"sess_{int(time.time() * 1000)}_{random.randint(100, 999)}"
+    EXTRACTION_FILE_SESSIONS[session_id] = {os.path.basename(p): p for p in saved_paths}
+    while len(EXTRACTION_FILE_SESSIONS) > 8:
+        oldest_key = next(iter(EXTRACTION_FILE_SESSIONS))
+        EXTRACTION_FILE_SESSIONS.pop(oldest_key, None)
+    return session_id
 
 # -------------------------------------------------------------
 # Redis Telemetry & Prometheus / Grafana Observability Engine
@@ -142,58 +156,72 @@ METRIC_REDIS_MISSES = Counter('cg_ocr_redis_misses_total', 'Redis cache miss cou
 METRIC_CPU_PERCENT = Gauge('cg_system_cpu_usage_percent', 'Current host CPU usage percentage', registry=CG_REGISTRY)
 METRIC_MEMORY_BYTES = Gauge('cg_system_memory_usage_bytes', 'Current server RSS memory usage in bytes', registry=CG_REGISTRY)
 METRIC_REDIS_KEYS = Gauge('cg_redis_total_keys', 'Current number of active keys in Redis telemetry store', registry=CG_REGISTRY)
+METRIC_GEMINI_CALLS = Gauge('cg_gemini_calls_total', 'Total recorded Gemini API calls', registry=CG_REGISTRY)
+METRIC_GEMINI_TOKENS = Gauge('cg_gemini_tokens_total', 'Total recorded Gemini API tokens', ['kind'], registry=CG_REGISTRY)
+METRIC_GEMINI_COST_USD = Gauge('cg_gemini_estimated_cost_usd', 'Estimated cumulative Gemini USD cost from token usage', registry=CG_REGISTRY)
+
+# Prime psutil CPU baseline once so subsequent interval=None calls measure real delta
+psutil.cpu_percent(interval=None)
+_PROCESS_HANDLE = psutil.Process()
+
 
 class RedisTelemetryEngine:
     """
-    High-Performance Redis Telemetry & Caching Engine.
-    Connects to external Redis instance if available, or seamlessly runs an embedded
-    in-memory Redis 7.2-compatible cache buffer with TTL and full metrics telemetry.
+    Real-Time Redis Telemetry & Caching Engine.
+    Connects to a standalone Redis instance and reports exact live metrics from PING / INFO / DBSIZE / SCAN.
+    If the Redis server is unreachable, accurately reports offline status while safely failing over
+    to a local in-memory cache so authentication/rate-limit checks keep functioning.
     """
     def __init__(self):
         self.redis_url = os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0")
         self.client = None
         self.is_connected = False
-        self.mode = "embedded"  # "standalone" or "embedded"
+        self.mode = "offline"  # "standalone" or "offline"
+        self.last_error: Optional[str] = None
         self._memory_store: Dict[str, Tuple[Any, float]] = {}
         self._stats = {
-            "hits": 146,
-            "misses": 5,
-            "ops": 298,
+            "hits": 0,
+            "misses": 0,
+            "ops": 0,
             "start_time": time.time(),
-            "last_ping_ms": 0.16
+            "last_ping_ms": None,
         }
         self._init_connection()
-        self._seed_initial_data()
 
     def _init_connection(self):
         try:
-            r = redis.from_url(self.redis_url, socket_timeout=0.25, socket_connect_timeout=0.25)
+            r = redis.from_url(self.redis_url, socket_timeout=0.35, socket_connect_timeout=0.35)
             r.ping()
             self.client = r
             self.is_connected = True
             self.mode = "standalone"
+            self.last_error = None
             print(f"[REDIS TELEMETRY] Connected to live Redis instance at {self.redis_url}", flush=True)
         except Exception as e:
             self.client = None
-            self.is_connected = True
-            self.mode = "embedded"
-            print(f"[REDIS TELEMETRY] Live Redis server not detected at {self.redis_url}. Activated high-performance Embedded Redis 7.2 Telemetry Cache.", flush=True)
+            self.is_connected = False
+            self.mode = "offline"
+            self.last_error = str(e)
+            print(f"[REDIS TELEMETRY] Redis server unavailable at {self.redis_url}: {e}", flush=True)
 
-    def _seed_initial_data(self):
-        self.set("auth:whitelist:count", 4)
-        self.set("ocr:cache:CHL-2026-0100", {"invoice_no": "CHL-2026-0100", "cached": True}, ex=3600)
-        self.set("telemetry:status", "HEALTHY", ex=3600)
-        self.set("rate_limit:otp:guard", "ARMED", ex=3600)
+    def _ensure_connection(self) -> bool:
+        if self.client is not None:
+            return True
+        self._init_connection()
+        return self.client is not None
 
     def set(self, key: str, val: Any, ex: Optional[int] = None) -> bool:
         self._stats["ops"] += 1
-        if self.client and self.mode == "standalone":
+        if self._ensure_connection() and self.client is not None:
             try:
                 self.client.set(key, json.dumps(val) if isinstance(val, (dict, list)) else str(val), ex=ex)
-                METRIC_REDIS_KEYS.inc()
+                METRIC_REDIS_KEYS.set(self.client.dbsize())
                 return True
-            except Exception:
-                pass
+            except Exception as e:
+                self.is_connected = False
+                self.mode = "offline"
+                self.last_error = str(e)
+                self.client = None
         exp = time.time() + ex if ex else float('inf')
         self._memory_store[key] = (val, exp)
         METRIC_REDIS_KEYS.set(len(self._memory_store))
@@ -201,7 +229,7 @@ class RedisTelemetryEngine:
 
     def get(self, key: str) -> Optional[Any]:
         self._stats["ops"] += 1
-        if self.client and self.mode == "standalone":
+        if self._ensure_connection() and self.client is not None:
             try:
                 raw = self.client.get(key)
                 if raw is not None:
@@ -210,110 +238,283 @@ class RedisTelemetryEngine:
                     try:
                         return json.loads(raw)
                     except Exception:
-                        return raw.decode("utf-8", errors="ignore")
+                        return raw.decode("utf-8", errors="ignore") if isinstance(raw, bytes) else str(raw)
                 else:
                     self._stats["misses"] += 1
                     METRIC_REDIS_MISSES.inc()
                     return None
-            except Exception:
-                pass
+            except Exception as e:
+                self.is_connected = False
+                self.mode = "offline"
+                self.last_error = str(e)
+                self.client = None
         if key in self._memory_store:
             val, exp = self._memory_store[key]
             if time.time() <= exp:
                 self._stats["hits"] += 1
                 METRIC_REDIS_HITS.inc()
                 return val
-            else:
-                del self._memory_store[key]
+            del self._memory_store[key]
         self._stats["misses"] += 1
         METRIC_REDIS_MISSES.inc()
         return None
 
     def delete(self, key: str):
         self._stats["ops"] += 1
-        if self.client and self.mode == "standalone":
+        if self._ensure_connection() and self.client is not None:
             try:
                 self.client.delete(key)
-                METRIC_REDIS_KEYS.dec()
+                METRIC_REDIS_KEYS.set(self.client.dbsize())
             except Exception:
                 pass
         self._memory_store.pop(key, None)
-        METRIC_REDIS_KEYS.set(len(self._memory_store))
+
+    def _scan_real_namespaces(self) -> List[Dict[str, Any]]:
+        """Group real live Redis keys by prefix and inspect their remaining TTLs."""
+        groups: Dict[str, Dict[str, Any]] = {}
+        try:
+            for raw_k in self.client.scan_iter(count=300):
+                key_str = raw_k.decode("utf-8", errors="ignore") if isinstance(raw_k, bytes) else str(raw_k)
+                prefix = key_str.split(":", 1)[0] if ":" in key_str else key_str
+                if prefix not in groups:
+                    groups[prefix] = {"namespace": f"{prefix}:*", "keys": 0, "ttls": []}
+                groups[prefix]["keys"] += 1
+                if len(groups[prefix]["ttls"]) < 10:
+                    try:
+                        ttl_val = self.client.ttl(raw_k)
+                        groups[prefix]["ttls"].append(ttl_val)
+                    except Exception:
+                        pass
+        except Exception:
+            return []
+
+        result = []
+        for prefix, g in sorted(groups.items(), key=lambda item: -item[1]["keys"])[:8]:
+            ttls = [t for t in g["ttls"] if isinstance(t, int)]
+            if not ttls or all(t == -1 for t in ttls):
+                ttl_label = "No Expiry"
+            else:
+                pos = [t for t in ttls if t >= 0]
+                if not pos:
+                    ttl_label = "Volatile"
+                elif min(pos) == max(pos):
+                    ttl_label = f"{max(pos)}s"
+                else:
+                    ttl_label = f"{min(pos)}s - {max(pos)}s"
+            result.append({
+                "namespace": g["namespace"],
+                "keys": g["keys"],
+                "ttl": ttl_label,
+                "purpose": "Live Redis keyspace prefix",
+            })
+        return result
 
     def get_telemetry_info(self) -> Dict[str, Any]:
-        t0 = time.time()
-        ping_latency = 0.16
-        if self.client and self.mode == "standalone":
+        self._ensure_connection()
+        host_display = self.redis_url.split("@")[-1].split("/")[0]
+
+        if self.client is not None and self.mode == "standalone":
             try:
+                t0 = time.perf_counter()
                 self.client.ping()
-                ping_latency = round((time.time() - t0) * 1000, 2)
+                ping_latency = round((time.perf_counter() - t0) * 1000.0, 2)
                 info = self.client.info()
-                used_mem_bytes = info.get("used_memory", 2 * 1024 * 1024)
-                hits = info.get("keyspace_hits", self._stats["hits"])
-                misses = info.get("keyspace_misses", self._stats["misses"])
-                total_keys = self.client.dbsize()
-            except Exception:
-                ping_latency = 0.21
-                used_mem_bytes = len(self._memory_store) * 1024 + 1048576
-                hits, misses = self._stats["hits"], self._stats["misses"]
-                total_keys = len(self._memory_store)
-        else:
-            now = time.time()
-            expired = [k for k, (v, exp) in self._memory_store.items() if now > exp]
-            for k in expired:
-                del self._memory_store[k]
-            ping_latency = round(random.uniform(0.12, 0.26), 2)
-            used_mem_bytes = len(self._memory_store) * 1420 + 2450000
-            hits, misses = self._stats["hits"], self._stats["misses"]
-            total_keys = max(len(self._memory_store), 4)
+                used_mem_bytes = int(info.get("used_memory", 0))
+                hits = int(info.get("keyspace_hits", 0))
+                misses = int(info.get("keyspace_misses", 0))
+                total_keys = int(self.client.dbsize())
+                ops_per_sec = float(info.get("instantaneous_ops_per_sec", 0))
+                total_cmds = int(info.get("total_commands_processed", 0))
+                uptime = int(info.get("uptime_in_seconds", 0))
+                version = str(info.get("redis_version", "unknown"))
+                total_lookups = hits + misses
+                hit_rate = round((hits / total_lookups * 100.0), 1) if total_lookups > 0 else 0.0
+                METRIC_REDIS_KEYS.set(total_keys)
 
+                return {
+                    "status": "online",
+                    "connected": True,
+                    "mode": f"Live Standalone Redis Server (v{version})",
+                    "server_type": f"Redis v{version}",
+                    "version": version,
+                    "host": host_display,
+                    "ping_latency_ms": ping_latency,
+                    "used_memory_bytes": used_mem_bytes,
+                    "used_memory_human": info.get("used_memory_human") or f"{used_mem_bytes / (1024 * 1024):.2f} MB",
+                    "total_keys": total_keys,
+                    "keyspace_hits": hits,
+                    "keyspace_misses": misses,
+                    "hit_rate_percent": hit_rate,
+                    "ops_per_sec": round(ops_per_sec, 1),
+                    "total_commands_processed": total_cmds,
+                    "uptime_seconds": uptime,
+                    "cached_namespaces": self._scan_real_namespaces(),
+                }
+            except Exception as e:
+                self.is_connected = False
+                self.mode = "offline"
+                self.last_error = str(e)
+                self.client = None
+
+        # Offline fallback: report honest disconnected state & actual local fallback buffer size
+        now = time.time()
+        expired = [k for k, (_, exp) in self._memory_store.items() if now > exp]
+        for k in expired:
+            del self._memory_store[k]
+        hits, misses = self._stats["hits"], self._stats["misses"]
         total_lookups = hits + misses
-        hit_rate = round((hits / total_lookups * 100), 1) if total_lookups > 0 else 98.6
-        uptime = int(time.time() - self._stats["start_time"])
-        ops_per_sec = round(self._stats["ops"] / max(uptime, 1), 1) + 8.4
-
+        hit_rate = round((hits / total_lookups * 100.0), 1) if total_lookups > 0 else 0.0
+        uptime = int(now - self._stats["start_time"])
         return {
-            "status": "online",
-            "connected": True,
-            "mode": "Live Standalone Redis Server" if self.mode == "standalone" else "Embedded In-Memory Redis Engine (v7.2.4)",
-            "server_type": "Redis v7.2-Alpine" if self.mode == "standalone" else "Redis Telemetry Fast-Buffer (Local)",
-            "host": self.redis_url.split("@")[-1].split("/")[0] if self.mode == "standalone" else "127.0.0.1:6379",
-            "ping_latency_ms": ping_latency,
-            "used_memory_bytes": used_mem_bytes,
-            "used_memory_human": f"{used_mem_bytes / (1024 * 1024):.2f} MB",
-            "total_keys": total_keys,
+            "status": "offline",
+            "connected": False,
+            "mode": "Offline (In-Memory Fallback Active)",
+            "server_type": "Disconnected",
+            "version": None,
+            "host": host_display,
+            "error": self.last_error or "Redis connection refused",
+            "ping_latency_ms": None,
+            "used_memory_bytes": 0,
+            "used_memory_human": "0.00 MB",
+            "total_keys": len(self._memory_store),
             "keyspace_hits": hits,
             "keyspace_misses": misses,
             "hit_rate_percent": hit_rate,
-            "ops_per_sec": ops_per_sec,
-            "total_commands_processed": self._stats["ops"] + 120,
-            "uptime_seconds": uptime + 3600,
-            "cached_namespaces": [
-                {"namespace": "otp:guard", "keys": 2, "ttl": "60s - 300s", "purpose": "Anti-bot rate limits & active OTP sessions"},
-                {"namespace": "ocr:cache", "keys": 4, "ttl": "3600s", "purpose": "Fast extraction deduplication & SHA-256 digests"},
-                {"namespace": "auth:whitelist", "keys": 1, "ttl": "Permanent", "purpose": "Authorized employee fast-lookup set"},
-                {"namespace": "telemetry:grafana", "keys": 7, "ttl": "Rolling 1h", "purpose": "OpenMetrics rolling time-series buffer"}
-            ]
+            "ops_per_sec": round(self._stats["ops"] / max(uptime, 1), 1),
+            "total_commands_processed": self._stats["ops"],
+            "uptime_seconds": uptime,
+            "cached_namespaces": [],
         }
 
 redis_engine = RedisTelemetryEngine()
 
+
+class RealTimeTelemetryRecorder:
+    """Collects actual HTTP request throughput, durations, errors, and host CPU/RSS samples."""
+
+    def __init__(self, max_events: int = 5000):
+        self._lock = threading.Lock()
+        self._events: deque = deque(maxlen=max_events)
+        self._resource_samples: deque = deque(maxlen=240)
+        self.in_flight: int = 0
+        self.start_time: float = time.time()
+
+    def enter_request(self) -> None:
+        with self._lock:
+            self.in_flight += 1
+
+    def record_request(self, duration_ms: float, status_code: int, cpu_pct: float, mem_bytes: int) -> None:
+        now = time.time()
+        with self._lock:
+            self.in_flight = max(0, self.in_flight - 1)
+            self._events.append((now, duration_ms, status_code))
+            self._resource_samples.append((now, cpu_pct, mem_bytes))
+
+    def sample_resources_now(self, redis_ops: float = 0.0) -> Tuple[float, float]:
+        cpu_pct = round(float(psutil.cpu_percent(interval=None) or 0.0), 1)
+        mem_bytes = _PROCESS_HANDLE.memory_info().rss
+        mem_mb = round(mem_bytes / (1024 * 1024), 1)
+        now = time.time()
+        with self._lock:
+            self._resource_samples.append((now, cpu_pct, mem_bytes))
+        METRIC_CPU_PERCENT.set(cpu_pct)
+        METRIC_MEMORY_BYTES.set(mem_bytes)
+        return cpu_pct, mem_mb
+
+    def get_timeseries_and_summary(self, redis_ops_per_sec: float = 0.0) -> Dict[str, Any]:
+        cpu_now, mem_mb_now = self.sample_resources_now(redis_ops_per_sec)
+        now = time.time()
+        window_start = now - 60.0
+
+        with self._lock:
+            recent_events = [e for e in self._events if e[0] >= window_start]
+            recent_resources = [s for s in self._resource_samples if s[0] >= window_start]
+            active_conn = self.in_flight
+
+        # Build 12 real 5-second buckets spanning [now - 60s .. now]
+        bucket_size = 5.0
+        points = []
+        for idx in range(12):
+            b_start = window_start + idx * bucket_size
+            b_end = b_start + bucket_size
+            b_evts = [e for e in recent_events if b_start <= e[0] < b_end]
+            b_res = [s for s in recent_resources if b_start <= s[0] < b_end]
+
+            b_rps = round(len(b_evts) / bucket_size, 2)
+            if b_evts:
+                durs = sorted(e[1] for e in b_evts)
+                p95_idx = min(len(durs) - 1, max(0, int(0.95 * (len(durs) - 1))))
+                b_p95 = round(durs[p95_idx], 2)
+            else:
+                b_p95 = 0.0
+
+            b_cpu = round(sum(s[1] for s in b_res) / len(b_res), 1) if b_res else cpu_now
+            b_mem = round((b_res[-1][2] / (1024 * 1024)), 1) if b_res else mem_mb_now
+
+            points.append({
+                "timestamp": time.strftime("%H:%M:%S", time.localtime(b_end)),
+                "requests": len(b_evts),
+                "rps": b_rps,
+                "latency_p95_ms": b_p95,
+                "cpu_percent": b_cpu,
+                "memory_mb": b_mem,
+                "redis_ops_sec": round(redis_ops_per_sec, 1),
+            })
+
+        total_60s = len(recent_events)
+        elapsed_window = min(60.0, max(1.0, now - self.start_time))
+        avg_rps = round(total_60s / elapsed_window, 2)
+        if recent_events:
+            all_durs = sorted(e[1] for e in recent_events)
+            p95_idx = min(len(all_durs) - 1, max(0, int(0.95 * (len(all_durs) - 1))))
+            p95_ms = round(all_durs[p95_idx], 2)
+            err_count = sum(1 for e in recent_events if e[2] >= 400)
+            error_rate_pct = round((err_count / total_60s) * 100.0, 2)
+        else:
+            p95_ms = 0.0
+            error_rate_pct = 0.0
+
+        return {
+            "timeseries": points,
+            "summary": {
+                "avg_rps": avg_rps,
+                "p95_latency_ms": p95_ms,
+                "cpu_utilization": f"{cpu_now:.1f}%",
+                "memory_utilization": f"{mem_mb_now:.1f} MB",
+                "error_rate": f"{error_rate_pct:.2f}%",
+                "active_connections": active_conn,
+                "total_requests_60s": total_60s,
+            },
+        }
+
+
+telemetry_recorder = RealTimeTelemetryRecorder()
+
+
 @app.middleware("http")
 async def prometheus_telemetry_middleware(request: Request, call_next):
-    """Intercept all incoming requests to record Prometheus metrics for Grafana."""
-    t_start = time.time()
-    response = await call_next(request)
-    duration = time.time() - t_start
-    endpoint = request.url.path
-    status = str(response.status_code)
+    """Intercept all incoming requests to record real Prometheus and sliding-window metrics."""
+    t_start = time.perf_counter()
+    telemetry_recorder.enter_request()
+    status_code = 500
     try:
-        METRIC_REQUESTS_TOTAL.labels(method=request.method, endpoint=endpoint, status=status).inc()
-        METRIC_REQUEST_LATENCY.labels(endpoint=endpoint).observe(duration)
-        METRIC_CPU_PERCENT.set(psutil.cpu_percent(interval=None) or 8.2)
-        METRIC_MEMORY_BYTES.set(psutil.Process().memory_info().rss)
-    except Exception:
-        pass
-    return response
+        response = await call_next(request)
+        status_code = response.status_code
+        return response
+    finally:
+        duration_sec = time.perf_counter() - t_start
+        duration_ms = duration_sec * 1000.0
+        endpoint = request.url.path
+        cpu_pct = round(float(psutil.cpu_percent(interval=None) or 0.0), 1)
+        mem_bytes = _PROCESS_HANDLE.memory_info().rss
+        telemetry_recorder.record_request(duration_ms, status_code, cpu_pct, mem_bytes)
+        try:
+            METRIC_REQUESTS_TOTAL.labels(method=request.method, endpoint=endpoint, status=str(status_code)).inc()
+            METRIC_REQUEST_LATENCY.labels(endpoint=endpoint).observe(duration_sec)
+            METRIC_CPU_PERCENT.set(cpu_pct)
+            METRIC_MEMORY_BYTES.set(mem_bytes)
+        except Exception:
+            pass
 
 # -------------------------------------------------------------
 # CG-OCR Persistent Database, Real Authentication & Security Engine
@@ -856,6 +1057,8 @@ async def health(api_url: Optional[str] = None, gemini_api_key: Optional[str] = 
     sb_client = SupabaseClient()
     sb_status = sb_client.check_connection()
     redis_info = redis_engine.get_telemetry_info()
+    usage_info = usage_tracker.get_summary()
+    metrics_families = len(list(CG_REGISTRY.collect()))
 
     return {
         "status": "healthy",
@@ -867,9 +1070,10 @@ async def health(api_url: Optional[str] = None, gemini_api_key: Optional[str] = 
             "status": "online",
             "prometheus_endpoint": "/metrics",
             "telemetry_endpoint": "/api/telemetry/grafana",
-            "active_metrics": 28,
+            "active_metrics": metrics_families,
             "scrape_interval": "5s"
         },
+        "usage": usage_info,
         "timestamp": time.time()
     }
 
@@ -878,10 +1082,39 @@ async def health(api_url: Optional[str] = None, gemini_api_key: Optional[str] = 
 # Prometheus Exporter & Grafana Telemetry Endpoints
 # -------------------------------------------------------------
 
+def _sync_usage_prometheus_gauges() -> Dict[str, Any]:
+    """Update Prometheus gauges from real SQLite usage stats before scrape/query."""
+    usage = usage_tracker.get_summary()
+    try:
+        METRIC_GEMINI_CALLS.set(usage["gemini_calls"])
+        METRIC_GEMINI_TOKENS.labels(kind="prompt").set(usage["prompt_tokens"])
+        METRIC_GEMINI_TOKENS.labels(kind="candidates").set(usage["candidates_tokens"])
+        METRIC_GEMINI_TOKENS.labels(kind="total").set(usage["total_tokens"])
+        METRIC_GEMINI_COST_USD.set(usage["estimated_cost_usd"])
+    except Exception:
+        pass
+    return usage
+
+
 @app.get("/metrics")
 async def prometheus_metrics():
     """Prometheus / OpenMetrics scrape target for Grafana Agent and Prometheus Server."""
+    _sync_usage_prometheus_gauges()
+    telemetry_recorder.sample_resources_now()
     return Response(content=generate_latest(CG_REGISTRY), media_type=CONTENT_TYPE_LATEST)
+
+
+@app.get("/api/telemetry/usage")
+async def get_usage_telemetry():
+    """Return real-time token consumption, estimated USD cost, and total call counts."""
+    return _sync_usage_prometheus_gauges()
+
+
+@app.post("/api/telemetry/usage/reset")
+async def reset_usage_telemetry():
+    """Reset recorded API call and token counters."""
+    usage_tracker.reset()
+    return {"status": "success", "usage": _sync_usage_prometheus_gauges()}
 
 
 @app.get("/api/telemetry/redis")
@@ -893,12 +1126,17 @@ async def get_redis_telemetry():
 @app.post("/api/telemetry/redis/ping")
 async def ping_redis():
     """Execute live Redis PING command to verify round-trip sub-millisecond response."""
-    t0 = time.time()
-    test_key = f"ping:test:{int(t0*1000)}"
+    t0 = time.perf_counter()
+    test_key = f"ping:test:{int(time.time() * 1000)}"
     redis_engine.set(test_key, "PONG", ex=10)
     val = redis_engine.get(test_key)
-    latency = round((time.time() - t0) * 1000, 3)
-    return {"status": "success", "response": "PONG", "round_trip_ms": latency}
+    latency = round((time.perf_counter() - t0) * 1000, 3)
+    return {
+        "status": "success" if redis_engine.is_connected else "offline_fallback",
+        "connected": redis_engine.is_connected,
+        "response": val or "PONG",
+        "round_trip_ms": latency,
+    }
 
 
 @app.post("/api/telemetry/redis/test")
@@ -907,12 +1145,13 @@ async def test_redis_cache(payload: Dict[str, Any] = None):
     payload = payload or {}
     key = payload.get("key", f"test:cache:{int(time.time())}")
     val = payload.get("value", {"telemetry": "active", "timestamp": time.time()})
-    t0 = time.time()
+    t0 = time.perf_counter()
     redis_engine.set(key, val, ex=60)
     retrieved = redis_engine.get(key)
-    dur = round((time.time() - t0) * 1000, 2)
+    dur = round((time.perf_counter() - t0) * 1000, 2)
     return {
-        "status": "success",
+        "status": "success" if redis_engine.is_connected else "offline_fallback",
+        "connected": redis_engine.is_connected,
         "key": key,
         "written": True,
         "retrieved": retrieved,
@@ -923,41 +1162,22 @@ async def test_redis_cache(payload: Dict[str, Any] = None):
 @app.get("/api/telemetry/grafana")
 async def grafana_telemetry():
     """
-    Real-time telemetry timeseries data and Grafana datasource/dashboard configs.
+    Real-time telemetry timeseries data (computed from actual HTTP requests and psutil samples)
+    plus Prometheus metric family count and live API token/cost usage.
     """
-    now = time.time()
-    points = []
-    base_cpu = psutil.cpu_percent(interval=None) or 8.4
-    mem_mb = round(psutil.Process().memory_info().rss / (1024 * 1024), 1)
-
-    for i in range(12, 0, -1):
-        ts = now - (i * 5)
-        point_cpu = max(2.5, min(95.0, round(base_cpu + random.uniform(-1.2, 2.2), 1)))
-        point_rps = round(random.uniform(14.0, 38.5), 1)
-        point_p95 = round(random.uniform(7.8, 13.9), 2)
-        points.append({
-            "timestamp": time.strftime("%H:%M:%S", time.localtime(ts)),
-            "rps": point_rps,
-            "latency_p95_ms": point_p95,
-            "cpu_percent": point_cpu,
-            "memory_mb": mem_mb,
-            "redis_ops_sec": round(point_rps * 1.8, 1)
-        })
+    redis_info = redis_engine.get_telemetry_info()
+    rt = telemetry_recorder.get_timeseries_and_summary(redis_ops_per_sec=redis_info.get("ops_per_sec", 0.0))
+    usage = _sync_usage_prometheus_gauges()
+    active_metrics_count = len(list(CG_REGISTRY.collect()))
 
     return {
         "status": "online",
         "prometheus_endpoint": "/metrics",
         "scrape_interval": "5s",
-        "active_metrics_count": 28,
-        "timeseries": points,
-        "summary": {
-            "avg_rps": round(sum(p["rps"] for p in points) / len(points), 1),
-            "p95_latency_ms": round(sum(p["latency_p95_ms"] for p in points) / len(points), 2),
-            "cpu_utilization": f"{base_cpu:.1f}%",
-            "memory_utilization": f"{mem_mb:.1f} MB",
-            "error_rate": "0.00%",
-            "active_connections": 1
-        },
+        "active_metrics_count": active_metrics_count,
+        "timeseries": rt["timeseries"],
+        "summary": rt["summary"],
+        "usage": usage,
         "grafana_dashboard_json": {
             "title": "CG-OCR Enterprise Telemetry & Infrastructure",
             "uid": "cg-ocr-telemetry",
@@ -969,7 +1189,8 @@ async def grafana_telemetry():
                 {"id": 3, "title": "Redis Cache Hit Ratio (%)", "type": "gauge", "expr": "sum(rate(cg_ocr_redis_hits_total[1m])) / (sum(rate(cg_ocr_redis_hits_total[1m])) + sum(rate(cg_ocr_redis_misses_total[1m]))) * 100"},
                 {"id": 4, "title": "Host CPU Utilization (%)", "type": "gauge", "expr": "cg_system_cpu_usage_percent"},
                 {"id": 5, "title": "Invoices Extracted & Validated", "type": "stat", "expr": "sum(cg_ocr_invoices_extracted_total)"},
-                {"id": 6, "title": "Security & OTP Breaches Blocked", "type": "stat", "expr": "sum(cg_ocr_security_events_total)"}
+                {"id": 6, "title": "Security & OTP Breaches Blocked", "type": "stat", "expr": "sum(cg_ocr_security_events_total)"},
+                {"id": 7, "title": "Gemini Estimated Token Cost (USD)", "type": "stat", "expr": "cg_gemini_estimated_cost_usd"}
             ]
         }
     }
@@ -1125,7 +1346,8 @@ async def extract_documents_stream(
 
     clean_url = (api_url.strip() if api_url and api_url.strip() else None) or DEFAULT_GPU_URL
     clean_gemini_key = (gemini_api_key.strip() if gemini_api_key and gemini_api_key.strip() else None) or os.environ.get("GEMINI_API_KEY", "").strip() or None
-    print(f"[/api/extract/stream] Processing {len(saved_paths)} file(s). Gemini Key configured: {bool(clean_gemini_key)}")
+    session_id = register_extraction_session(saved_paths)
+    print(f"[/api/extract/stream] Processing {len(saved_paths)} file(s) [session={session_id}]. Gemini Key configured: {bool(clean_gemini_key)}")
 
     async def event_generator():
         queue = asyncio.Queue()
@@ -1207,6 +1429,7 @@ async def extract_documents_stream(
                 throughput = round(total_pages / duration, 2) if duration > 0 else float(total_pages)
 
                 summary = {
+                    "session_id": session_id,
                     "total_files": len(saved_paths),
                     "total_pages": total_pages,
                     "total_sheets": total_sheets,
@@ -1226,6 +1449,7 @@ async def extract_documents_stream(
 
                 loop.call_soon_threadsafe(queue.put_nowait, {
                     "type": "complete",
+                    "session_id": session_id,
                     "summary": summary,
                     "documents": docs_data
                 })
@@ -1292,7 +1516,8 @@ async def extract_documents(
 
     clean_url = (api_url.strip() if api_url and api_url.strip() else None) or DEFAULT_GPU_URL
     clean_gemini_key = (gemini_api_key.strip() if gemini_api_key and gemini_api_key.strip() else None) or os.environ.get("GEMINI_API_KEY", "").strip() or None
-    print(f"[/api/extract/stream] Processing {len(saved_paths)} file(s). Gemini Key configured: {bool(clean_gemini_key)}")
+    session_id = register_extraction_session(saved_paths)
+    print(f"[/api/extract/stream] Processing {len(saved_paths)} file(s) [session={session_id}]. Gemini Key configured: {bool(clean_gemini_key)}")
 
     orchestrator = DocumentOrchestrator(
         api_url=clean_url,
@@ -1329,6 +1554,7 @@ async def extract_documents(
 
     summary_data = {
         "job_id": job_id,
+        "session_id": session_id,
         "total_files": len(saved_paths),
         "total_pages": total_pages,
         "total_sheets": total_sheets,
@@ -1346,10 +1572,183 @@ async def extract_documents(
 
     return {
         "job_id": job_id,
+        "session_id": session_id,
         "summary": summary_data,
         "documents": docs_data,
         "logs": JOBS[job_id]["logs"]
     }
+
+
+def _reextract_file_with_gemini(
+    file_path: str,
+    filename: str,
+    gemini_key: str,
+    page_index: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Render requested page(s) of a PDF or Image and re-extract OCR text directly via Gemini Vision AI.
+    Used when the user sees poor OCR output and manually triggers Gemini Re-OCR.
+    """
+    from PIL import Image, ImageSequence
+    from careguide.preprocessor import ImageEnhancer
+
+    gemini_client = GeminiOCRClient(api_key=gemini_key)
+    if not gemini_client.is_configured:
+        raise ValueError("Gemini API key is required for manual Gemini Re-OCR.")
+
+    ext = os.path.splitext(filename)[1].lower()
+    packet_elements: List[Dict[str, Any]] = []
+
+    if ext == ".pdf":
+        import fitz
+        with fitz.open(file_path) as doc:
+            target_indices = (
+                [page_index - 1]
+                if page_index is not None and 1 <= page_index <= doc.page_count
+                else list(range(doc.page_count))
+            )
+            for idx in target_indices:
+                p_num = idx + 1
+                page = doc.load_page(idx)
+                pix = page.get_pixmap(dpi=200)
+                raw_bytes = pix.tobytes("png")
+                pix = None
+                enhanced_bytes, applied_ops = ImageEnhancer.enhance(
+                    raw_bytes,
+                    deskew=True,
+                    remove_shadows=True,
+                    adaptive_threshold=True,
+                    denoise=True,
+                    output_format=".jpg",
+                )
+                packet_elements.append({
+                    "element_id": f"{filename}#p{p_num}",
+                    "filename": filename,
+                    "page_index": p_num,
+                    "image_bytes": enhanced_bytes,
+                    "applied_ops": applied_ops,
+                    "trigger_reason": "manual_user_reocr",
+                    "original_text": "",
+                    "original_confidence": 0.0,
+                })
+    else:
+        with Image.open(file_path) as pil_img:
+            frames = list(ImageSequence.Iterator(pil_img))
+            target_indices = (
+                [page_index - 1]
+                if page_index is not None and 1 <= page_index <= len(frames)
+                else list(range(len(frames)))
+            )
+            for idx in target_indices:
+                p_num = idx + 1
+                buf = io.BytesIO()
+                frames[idx].convert("RGB").save(buf, format="PNG")
+                enhanced_bytes, applied_ops = ImageEnhancer.enhance(
+                    buf.getvalue(),
+                    deskew=True,
+                    remove_shadows=True,
+                    adaptive_threshold=True,
+                    denoise=True,
+                    output_format=".jpg",
+                )
+                packet_elements.append({
+                    "element_id": f"{filename}#p{p_num}",
+                    "filename": filename,
+                    "page_index": p_num,
+                    "image_bytes": enhanced_bytes,
+                    "applied_ops": applied_ops,
+                    "trigger_reason": "manual_user_reocr",
+                    "original_text": "",
+                    "original_confidence": 0.0,
+                })
+
+    if not packet_elements:
+        raise ValueError("No valid pages found to re-extract.")
+
+    transcribed = gemini_client.transcribe_packet(packet_elements)
+    by_id = {r["element_id"]: r for r in transcribed}
+
+    updated_pages: List[Dict[str, Any]] = []
+    for elem in packet_elements:
+        res = by_id.get(elem["element_id"], {})
+        txt = (res.get("text") or "").strip()
+        if ext != ".pdf" and txt and not txt.startswith("=== this image"):
+            txt = f"=== this image: {filename} ===\n\n{txt}"
+        updated_pages.append({
+            "index": elem["page_index"],
+            "type": ExtractionType.UNLIMITED_OCR.value if hasattr(ExtractionType, "UNLIMITED_OCR") else "UNLIMITED_OCR",
+            "status": res.get("status", "SUCCESS") if txt else "FAILED",
+            "text": txt,
+            "preprocessing_applied": elem["applied_ops"],
+            "confidence": res.get("confidence", 0.98) if txt else 0.0,
+            "elapsed_ms": res.get("elapsed_ms", 0.0),
+            "engine": res.get("engine", "Gemini Vision AI (Manual Re-OCR)").replace("Packet Fallback", "Manual Re-OCR"),
+            "error": res.get("error"),
+        })
+    return updated_pages
+
+
+@app.post("/api/ocr/reextract-gemini")
+async def reextract_ocr_with_gemini(payload: Dict[str, Any]):
+    """Re-extract OCR for a page or whole document using Gemini Vision AI from a cached extraction session."""
+    session_id = (payload.get("session_id") or "").strip()
+    filename = (payload.get("filename") or "").strip()
+    page_index = payload.get("page_index")
+    gemini_key = (payload.get("gemini_api_key") or "").strip() or os.environ.get("GEMINI_API_KEY", "").strip()
+
+    if not session_id or session_id not in EXTRACTION_FILE_SESSIONS:
+        raise HTTPException(status_code=404, detail="Extraction session expired. Fallback upload required.")
+
+    session_files = EXTRACTION_FILE_SESSIONS[session_id]
+    file_path = session_files.get(filename)
+    if not file_path or not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail=f"Source file '{filename}' not found in session.")
+
+    if page_index is not None:
+        page_index = int(page_index)
+
+    try:
+        updated_pages = await asyncio.to_thread(
+            _reextract_file_with_gemini,
+            file_path=file_path,
+            filename=filename,
+            gemini_key=gemini_key,
+            page_index=page_index,
+        )
+        return {"status": "success", "filename": filename, "pages": updated_pages}
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gemini Re-OCR failed: {e}")
+
+
+@app.post("/api/ocr/reextract-gemini-upload")
+async def reextract_ocr_with_gemini_upload(
+    file: UploadFile = File(...),
+    page_index: Optional[int] = Form(None),
+    gemini_api_key: Optional[str] = Form(None),
+):
+    """Upload fallback endpoint to re-extract OCR for a page or whole document using Gemini Vision AI."""
+    gemini_key = (gemini_api_key or "").strip() or os.environ.get("GEMINI_API_KEY", "").strip()
+    temp_dir = tempfile.mkdtemp(prefix="careguide_reocr_")
+    file_path = os.path.join(temp_dir, file.filename)
+    content = await file.read()
+    with open(file_path, "wb") as out_f:
+        out_f.write(content)
+
+    try:
+        updated_pages = await asyncio.to_thread(
+            _reextract_file_with_gemini,
+            file_path=file_path,
+            filename=file.filename,
+            gemini_key=gemini_key,
+            page_index=page_index,
+        )
+        return {"status": "success", "filename": file.filename, "pages": updated_pages}
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gemini Re-OCR failed: {e}")
 
 
 @app.post("/api/download/zip")
@@ -1817,6 +2216,38 @@ async def download_invoices_excel(id: str):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": "attachment; filename=CareGuide_Invoices_Validated.xlsx"}
     )
+
+
+@app.post("/api/documents/analyze")
+async def analyze_extracted_documents(payload: Dict[str, Any]):
+    """
+    Generate an executive summary or answer a specific user question
+    from previously extracted document pages/sheets using strictly 1 Gemini call per query.
+    """
+    raw_docs = payload.get("documents", [])
+    mode = (payload.get("mode") or "summary").strip().lower()
+    question = payload.get("question")
+    gemini_key = (payload.get("gemini_api_key") or "").strip() or os.environ.get("GEMINI_API_KEY", "").strip()
+
+    if not raw_docs:
+        raise HTTPException(status_code=400, detail="No extracted document data provided.")
+
+    analyzer = DocumentAnalyzer(api_key=gemini_key)
+    if not analyzer.is_configured:
+        raise HTTPException(status_code=400, detail="Gemini API key is required for AI Summary & Q&A.")
+
+    try:
+        result = await asyncio.to_thread(
+            analyzer.analyze,
+            documents=raw_docs,
+            mode=mode,
+            question=question,
+        )
+        return result
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI analysis error: {e}")
 
 
 # -------------------------------------------------------------

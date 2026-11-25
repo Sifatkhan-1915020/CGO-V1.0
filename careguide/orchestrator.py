@@ -303,27 +303,55 @@ class DocumentOrchestrator:
         progress_callback: Optional[Callable] = None
     ):
         """
-        Scan all pages across documents. Any page that:
-        - Contains Bangla text (বাংলা)
-        - Has confidence level < 85% (< 0.85)
-        - Has status CORRUPTED or FAILED
-        - Has empty text on a visual scan
-        is combined into a Fallback Queue.
-        Elements are bundled into packets of at most 20 elements per packet.
-        If elements <= 20, all are combinedly passed in a single packet to Gemini.
-        Distinguishes between each element using strict header delimiters and demultiplexes results.
+        Evaluate visual pages in batch windows (up to self.batch_size, default 20 elements).
+        If ANY element in a batch has:
+        - Confidence < 85% (< 0.85)
+        - Bangla script detected (বাংলা)
+        - Status CORRUPTED or FAILED
+        - Empty text on a visual scan
+        (or batch average confidence < 0.85),
+        the ENTIRE batch is dispatched together to Gemini Vision AI in a packet call.
         """
-        fallback_queue = []
+        all_visual_entries = []
 
         for doc in documents:
+            if doc.file_type not in (DocumentType.PDF, DocumentType.IMAGE):
+                continue
             for page in doc.pages:
                 needs_fallback, reason = needs_gemini_fallback(page)
-                if not needs_fallback:
-                    continue
+                all_visual_entries.append({
+                    "doc": doc,
+                    "page": page,
+                    "needs_fallback": needs_fallback,
+                    "reason": reason,
+                })
 
+        if not all_visual_entries:
+            return
+
+        packet_size = max(1, min(self.batch_size, 20))
+        batches_to_dispatch = []
+
+        for b_start in range(0, len(all_visual_entries), packet_size):
+            batch_entries = all_visual_entries[b_start:b_start + packet_size]
+            avg_conf = sum(e["page"].confidence for e in batch_entries) / len(batch_entries)
+            trigger_reasons = [e["reason"] for e in batch_entries if e["needs_fallback"]]
+
+            if not trigger_reasons and avg_conf >= 0.85:
+                # Batch passed >= 85% cleanly; release cached image bytes
+                for e in batch_entries:
+                    e["page"].image_bytes = None
+                continue
+
+            batch_reason = trigger_reasons[0] if trigger_reasons else f"batch_avg_confidence_{avg_conf:.2f}"
+            packet_items = []
+
+            for e in batch_entries:
+                doc = e["doc"]
+                page = e["page"]
                 img_bytes = page.image_bytes
 
-                # If image_bytes was not cached, attempt on-demand recovery from file
+                # Recover image bytes on demand if not cached in memory
                 if img_bytes is None and doc.file_path and os.path.exists(doc.file_path):
                     if doc.file_type == DocumentType.PDF:
                         try:
@@ -353,44 +381,42 @@ class DocumentOrchestrator:
                         except Exception:
                             pass
 
-                    fallback_queue.append({
+                    packet_items.append({
                         "doc": doc,
                         "page": page,
                         "element_id": f"{real_name}#p{page.index}",
                         "filename": real_name,
                         "page_index": page.index,
                         "image_bytes": img_bytes,
-                        "trigger_reason": reason,
+                        "trigger_reason": e["reason"] or batch_reason,
                         "original_confidence": page.confidence,
                         "original_status": page.status.value,
                         "original_text": page.text
                     })
 
-        total_fallback = len(fallback_queue)
-        if total_fallback == 0:
+            if packet_items:
+                batches_to_dispatch.append((batch_reason, avg_conf, packet_items))
+
+        total_packets = len(batches_to_dispatch)
+        if total_packets == 0:
             return
 
-        packet_size = 20
-        total_packets = (total_fallback + packet_size - 1) // packet_size
-
+        total_pages_rescued = sum(len(items) for _, _, items in batches_to_dispatch)
         if progress_callback:
             progress_callback(
                 "Fallback Queue",
-                f"Aggregated {total_fallback} element(s) requiring Gemini fallback (Bangla/<85% conf/corrupted). "
-                f"Grouped into {total_packets} packet(s) of up to {packet_size} elements each."
+                f"Whole-batch Gemini fallback triggered for {total_packets} batch(es) ({total_pages_rescued} page(s)) where batch confidence < 85% or Bangla/errors detected."
             )
 
-        for p_idx, start_i in enumerate(range(0, total_fallback, packet_size), start=1):
-            packet_items = fallback_queue[start_i:start_i + packet_size]
+        for p_idx, (batch_reason, avg_conf, packet_items) in enumerate(batches_to_dispatch, start=1):
             cur_packet_len = len(packet_items)
 
             if progress_callback:
                 progress_callback(
                     f"Packet {p_idx}/{total_packets}",
-                    f"Passing packet of {cur_packet_len} element(s) combinedly to Gemini Vision AI..."
+                    f"Batch {p_idx}/{total_packets} ({batch_reason}, avg {avg_conf*100:.1f}%): sending WHOLE batch ({cur_packet_len} page(s)) to Gemini Vision AI..."
                 )
 
-            # Build multi-image payload
             gemini_payload = [
                 {
                     "element_id": item["element_id"],
@@ -409,7 +435,6 @@ class DocumentOrchestrator:
                 progress_callback=progress_callback
             )
 
-            # Map results by element_id
             results_by_id = {r["element_id"]: r for r in transcribed_items}
 
             for item in packet_items:
@@ -423,7 +448,6 @@ class DocumentOrchestrator:
 
                 if res.get("status") == "SUCCESS" and res.get("text", "").strip():
                     new_text = res["text"].strip()
-                    # Retain '=== this image: {filename} ===' header for images
                     if doc.file_type == DocumentType.IMAGE:
                         if not new_text.startswith("=== this image"):
                             new_text = f"=== this image: {item['filename']} ===\n\n{new_text}"
@@ -432,20 +456,18 @@ class DocumentOrchestrator:
                     page.confidence = res.get("confidence", 0.98)
                     page.status = ProcessingStatus.SUCCESS
                     page.type = ExtractionType.UNLIMITED_OCR
-                    page.engine = res.get("engine", "Gemini Vision AI (Packet Fallback)")
+                    page.engine = res.get("engine", "Gemini Vision AI (Whole-Batch Fallback)")
                     page.error = None
 
-                    # Update checkpoint ledger
                     self.checkpoint.record_page(self.batch_id, doc.doc_id, page)
 
                     if progress_callback:
                         progress_callback(
                             item["filename"],
-                            f"Element {item['page_index']} rescued by Gemini Packet ({item['trigger_reason']})",
+                            f"Page {item['page_index']} upgraded via Gemini Whole-Batch OCR ({item['trigger_reason']})",
                             page
                         )
 
-            # Free image bytes memory for processed packet
             for item in packet_items:
                 item["page"].image_bytes = None
 

@@ -18,6 +18,7 @@ from openpyxl.utils import get_column_letter
 
 from .schema import DocumentResult, ProcessingStatus
 from .bangla_utils import bangla_to_arabic_numerals, parse_bangla_numeric_string, is_bangla_text
+from .usage_tracker import usage_tracker, extract_gemini_usage
 
 
 # ---------------------------------------------------------
@@ -512,6 +513,7 @@ class InvoiceExtractor:
 
     def _call_gemini_json(self, prompt: str) -> str:
         """Call Gemini API with JSON enforcement, retries, and exponential backoff."""
+        t0 = time.time()
         # 1. Try google-genai SDK first
         try:
             from google import genai
@@ -530,6 +532,16 @@ class InvoiceExtractor:
                         config=config
                     )
                     if res.text and res.text.strip():
+                        usage = extract_gemini_usage(res)
+                        usage_tracker.record_call(
+                            feature="invoice_extract",
+                            model=model_name,
+                            prompt_tokens=usage["prompt_tokens"],
+                            candidates_tokens=usage["candidates_tokens"],
+                            total_tokens=usage["total_tokens"],
+                            latency_ms=(time.time() - t0) * 1000.0,
+                            status="success",
+                        )
                         return res.text.strip()
                 except Exception:
                     continue
@@ -560,6 +572,16 @@ class InvoiceExtractor:
                                 parts = candidates[0].get("content", {}).get("parts", [])
                                 txt = "".join(p.get("text", "") for p in parts).strip()
                                 if txt:
+                                    usage = extract_gemini_usage(data)
+                                    usage_tracker.record_call(
+                                        feature="invoice_extract",
+                                        model=model_name,
+                                        prompt_tokens=usage["prompt_tokens"],
+                                        candidates_tokens=usage["candidates_tokens"],
+                                        total_tokens=usage["total_tokens"],
+                                        latency_ms=(time.time() - t0) * 1000.0,
+                                        status="success",
+                                    )
                                     return txt
                         elif resp.status_code == 429:
                             # Respect Free Tier rate limit with backoff
@@ -571,6 +593,12 @@ class InvoiceExtractor:
                     last_err = str(e)
                     time.sleep(1.5)
 
+        usage_tracker.record_call(
+            feature="invoice_extract",
+            model=INVOICE_MODELS[0],
+            latency_ms=(time.time() - t0) * 1000.0,
+            status="failed",
+        )
         raise RuntimeError(f"Gemini invoice extraction failed: {last_err}")
 
     def _parse_gemini_response(

@@ -86,8 +86,20 @@ export default function App() {
   const [copiedText, setCopiedText] = useState(false);
   const [viewAllImages, setViewAllImages] = useState(false);
 
-  // Active view in Results Explorer: 'docs' | 'invoices'
+  // Active view in Results Explorer: 'docs' | 'invoices' | 'summary'
   const [activeResultsTab, setActiveResultsTab] = useState('docs');
+
+  // AI Summary & Specific Q&A State (1 Gemini call per query)
+  const [summaryResult, setSummaryResult] = useState(null);
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
+  const [summaryError, setSummaryError] = useState(null);
+  const [qaQuestion, setQaQuestion] = useState('');
+  const [qaHistory, setQaHistory] = useState([]);
+  const [isAskingQa, setIsAskingQa] = useState(false);
+  const [qaError, setQaError] = useState(null);
+  const [copiedSummary, setCopiedSummary] = useState(false);
+  const [reextractingScope, setReextractingScope] = useState(null); // null | 'page' | 'doc'
+  const [reextractError, setReextractError] = useState(null);
 
   // Invoice Extraction & Task 3 Validation State
   const [isExtractingInvoices, setIsExtractingInvoices] = useState(false);
@@ -179,6 +191,7 @@ export default function App() {
   // Redis & Grafana Telemetry state
   const [redisTelemetry, setRedisTelemetry] = useState(null);
   const [grafanaTelemetry, setGrafanaTelemetry] = useState(null);
+  const [usageTelemetry, setUsageTelemetry] = useState(null);
   const [isPingingRedis, setIsPingingRedis] = useState(false);
   const [redisPingToast, setRedisPingToast] = useState(null);
   const [isTestingRedisCache, setIsTestingRedisCache] = useState(false);
@@ -205,10 +218,12 @@ export default function App() {
       checkSupabaseStatus();
       fetchRedisTelemetry();
       fetchGrafanaTelemetry();
+      fetchUsageTelemetry();
       if (telemetryAutoRefresh) {
         interval = setInterval(() => {
           fetchRedisTelemetry();
           fetchGrafanaTelemetry();
+          fetchUsageTelemetry();
         }, 3500);
       }
     } else if (mainTab === 'chat') {
@@ -225,6 +240,7 @@ export default function App() {
     checkSupabaseStatus();
     fetchRedisTelemetry();
     fetchGrafanaTelemetry();
+    fetchUsageTelemetry();
     fetchSqlSchema();
   }, []);
 
@@ -270,6 +286,9 @@ export default function App() {
         }
         if (data.redis) {
           setRedisTelemetry(data.redis);
+        }
+        if (data.usage) {
+          setUsageTelemetry(data.usage);
         }
         if (data.grafana) {
           fetchGrafanaTelemetry();
@@ -354,9 +373,36 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         setGrafanaTelemetry(data);
+        if (data.usage) {
+          setUsageTelemetry(data.usage);
+        }
       }
     } catch (err) {
       console.warn('Failed to fetch Grafana telemetry:', err);
+    }
+  };
+
+  const fetchUsageTelemetry = async () => {
+    try {
+      const res = await fetch('/api/telemetry/usage');
+      if (res.ok) {
+        const data = await res.json();
+        setUsageTelemetry(data);
+      }
+    } catch (err) {
+      console.warn('Failed to fetch usage telemetry:', err);
+    }
+  };
+
+  const handleResetUsageTelemetry = async () => {
+    try {
+      const res = await fetch('/api/telemetry/usage/reset', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.usage) setUsageTelemetry(data.usage);
+      }
+    } catch (err) {
+      console.warn('Failed to reset usage telemetry:', err);
     }
   };
 
@@ -780,6 +826,13 @@ export default function App() {
     setInvoiceError(null);
     setInvoiceProgress(0);
     setGeminiInvoiceStatus(null);
+    setSummaryResult(null);
+    setSummaryError(null);
+    setQaHistory([]);
+    setQaError(null);
+    setQaQuestion('');
+    setReextractingScope(null);
+    setReextractError(null);
     setActiveResultsTab('docs');
     setLogs([]);
     setProgressPercent(0);
@@ -787,7 +840,7 @@ export default function App() {
 
   const getFileCategory = (name) => {
     const ext = name.substring(name.lastIndexOf('.')).toLowerCase();
-    if (ext === '.pdf') return { label: 'PDF Document', type: 'pdf', icon: FileText, route: 'Digital + GPU OCR (Batch: 20)' };
+    if (ext === '.pdf') return { label: 'PDF Document', type: 'pdf', icon: FileText, route: 'Baidu Unlimited-OCR (Kaggle GPU) + Gemini <85% Batch' };
     if (['.jpg', '.jpeg', '.png', '.tif', '.tiff', '.webp'].includes(ext)) {
       return { label: 'Scanned Image', type: 'image', icon: ImageIcon, route: 'OCR Engine (GPU / Local)' };
     }
@@ -806,6 +859,13 @@ export default function App() {
     setInvoiceError(null);
     setInvoiceProgress(0);
     setGeminiInvoiceStatus(null);
+    setSummaryResult(null);
+    setSummaryError(null);
+    setQaHistory([]);
+    setQaError(null);
+    setQaQuestion('');
+    setReextractingScope(null);
+    setReextractError(null);
     setActiveResultsTab('docs');
     setLogs([]);
     setProgressPercent(5);
@@ -938,6 +998,230 @@ export default function App() {
       model: 'gemini-3-flash-preview',
       message: 'Extraction stopped by user. All processed invoices remain loaded and secured in Supabase.'
     });
+  };
+
+  const handleGenerateSummary = async () => {
+    if (!results || !results.documents || results.documents.length === 0) return;
+    setActiveResultsTab('summary');
+    setIsGeneratingSummary(true);
+    setSummaryError(null);
+
+    try {
+      const res = await fetch('/api/documents/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          documents: results.documents,
+          mode: 'summary',
+          gemini_api_key: geminiKey.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || `Server returned ${res.status}`);
+      }
+      setSummaryResult(data);
+    } catch (err) {
+      setSummaryError(err.message || 'Failed to generate summary.');
+    } finally {
+      setIsGeneratingSummary(false);
+    }
+  };
+
+  const handleAskQuestion = async (overrideQuestion = null) => {
+    const q = (overrideQuestion !== null ? overrideQuestion : qaQuestion).trim();
+    if (!q || !results || !results.documents || results.documents.length === 0) return;
+
+    setActiveResultsTab('summary');
+    setIsAskingQa(true);
+    setQaError(null);
+
+    try {
+      const res = await fetch('/api/documents/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          documents: results.documents,
+          mode: 'qa',
+          question: q,
+          gemini_api_key: geminiKey.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || `Server returned ${res.status}`);
+      }
+      setQaHistory((prev) => [
+        {
+          id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          question: q,
+          answer: data.answer,
+          model: data.model,
+          latency_ms: data.latency_ms,
+          api_calls: data.api_calls || 1,
+          context_meta: data.context_meta,
+        },
+        ...prev,
+      ]);
+      if (overrideQuestion === null) {
+        setQaQuestion('');
+      }
+    } catch (err) {
+      setQaError(err.message || 'Failed to answer question.');
+    } finally {
+      setIsAskingQa(false);
+    }
+  };
+
+  const renderInlineBold = (line) => {
+    const parts = line.split(/(\*\*[^*]+\*\*)/g);
+    return parts.map((part, idx) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return (
+          <strong key={idx} style={{ color: '#0f172a', fontWeight: 700 }}>
+            {part.slice(2, -2)}
+          </strong>
+        );
+      }
+      return <React.Fragment key={idx}>{part}</React.Fragment>;
+    });
+  };
+
+  const renderFormattedAnswer = (text) => {
+    if (!text) return null;
+    const lines = text.split('\n');
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontFamily: 'Inter, sans-serif' }}>
+        {lines.map((rawLine, idx) => {
+          const line = rawLine.trim();
+          if (!line) return <div key={idx} style={{ height: '2px' }} />;
+          if (line.startsWith('### ') || line.startsWith('## ') || line.startsWith('# ')) {
+            const cleanHeading = line.replace(/^#{1,3}\s+/, '');
+            return (
+              <h5
+                key={idx}
+                style={{
+                  fontSize: '0.92rem',
+                  fontWeight: 700,
+                  color: '#0f172a',
+                  marginTop: idx > 0 ? '6px' : 0,
+                  letterSpacing: '-0.01em',
+                }}
+              >
+                {renderInlineBold(cleanHeading)}
+              </h5>
+            );
+          }
+          if (line.startsWith('- ') || line.startsWith('* ')) {
+            return (
+              <div
+                key={idx}
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '8px',
+                  paddingLeft: '2px',
+                  fontSize: '0.88rem',
+                  lineHeight: 1.55,
+                  color: '#1e293b',
+                }}
+              >
+                <span style={{ color: '#0284c7', fontWeight: 700, marginTop: '1px' }}>•</span>
+                <span>{renderInlineBold(line.slice(2))}</span>
+              </div>
+            );
+          }
+          return (
+            <p
+              key={idx}
+              style={{
+                fontSize: '0.88rem',
+                lineHeight: 1.6,
+                color: '#1e293b',
+                margin: 0,
+              }}
+            >
+              {renderInlineBold(line)}
+            </p>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const handleReextractWithGemini = async (scope = 'page') => {
+    if (!results || !results.documents || !results.documents[selectedDocIndex]) return;
+    const targetDoc = results.documents[selectedDocIndex];
+    const targetPages = targetDoc.pages || [];
+    const targetPage = targetPages[selectedPageIndex];
+    if (scope === 'page' && !targetPage) return;
+
+    setReextractingScope(scope);
+    setReextractError(null);
+
+    try {
+      const sessionId = results.session_id || results.summary?.session_id;
+      const pageIdxArg = scope === 'page' ? targetPage.index : null;
+      let data = null;
+
+      if (sessionId) {
+        const res = await fetch('/api/ocr/reextract-gemini', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            session_id: sessionId,
+            filename: targetDoc.filename,
+            page_index: pageIdxArg,
+            gemini_api_key: geminiKey.trim() || undefined,
+          }),
+        });
+        if (res.status !== 404) {
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.detail || `Server returned ${res.status}`);
+          data = json;
+        }
+      }
+
+      // Fallback upload if session expired or unavailable
+      if (!data) {
+        const matchingFile = files.find((f) => f.name === targetDoc.filename);
+        if (!matchingFile) {
+          throw new Error('Original file session expired. Please re-upload the file to re-OCR with Gemini.');
+        }
+        const fd = new FormData();
+        fd.append('file', matchingFile);
+        if (pageIdxArg !== null) fd.append('page_index', String(pageIdxArg));
+        if (geminiKey.trim()) fd.append('gemini_api_key', geminiKey.trim());
+        const upRes = await fetch('/api/ocr/reextract-gemini-upload', {
+          method: 'POST',
+          body: fd,
+        });
+        const upJson = await upRes.json();
+        if (!upRes.ok) throw new Error(upJson.detail || `Server returned ${upRes.status}`);
+        data = upJson;
+      }
+
+      const updatedByIndex = {};
+      (data.pages || []).forEach((p) => {
+        updatedByIndex[p.index] = p;
+      });
+
+      setResults((prev) => {
+        if (!prev || !prev.documents) return prev;
+        const nextDocs = prev.documents.map((d, dIdx) => {
+          if (dIdx !== selectedDocIndex) return d;
+          const nextPages = (d.pages || []).map((p) =>
+            updatedByIndex[p.index] ? { ...p, ...updatedByIndex[p.index] } : p
+          );
+          return { ...d, pages: nextPages, status: 'SUCCESS' };
+        });
+        return { ...prev, documents: nextDocs };
+      });
+    } catch (err) {
+      setReextractError(err.message || 'Failed to re-extract with Gemini Vision AI.');
+    } finally {
+      setReextractingScope(null);
+    }
   };
 
   const handleExtractInvoices = async () => {
@@ -1454,73 +1738,74 @@ export default function App() {
       </div>
     );
   }
-  // --- Authenticated Workspace View ---
+  // --- Authenticated Workspace View (Transparent White Glassmorphism) ---
   return (
-    <div style={{ maxWidth: '1440px', margin: '0 auto', padding: '24px' }}>
-      {/* MINIMALIST TOP NAVIGATION BAR */}
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Layers size={20} color="#000000" />
+    <div className="workspace-light-glass">
+    <div style={{ maxWidth: '1380px', margin: '0 auto', padding: '14px 20px' }}>
+      {/* COMPACT TOP NAVIGATION BAR */}
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 10px rgba(15, 23, 42, 0.12)' }}>
+            <Layers size={18} color="#ffffff" />
           </div>
           <div>
-            <h1 style={{ fontSize: '1.4rem', fontWeight: 800, letterSpacing: '-0.03em', color: '#ffffff' }}>
+            <h1 style={{ fontSize: '1.22rem', fontWeight: 800, letterSpacing: '-0.03em', color: '#0f172a', lineHeight: 1.1 }}>
               CG-OCR
             </h1>
-            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
-              Minimalist Document & Invoice Workspace
+            <span style={{ fontSize: '0.68rem', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
+              Document & Invoice AI
             </span>
           </div>
         </div>
 
         {/* 3 TABS SWITCHER */}
-        <div style={{ display: 'flex', gap: '6px', background: 'rgba(15, 23, 42, 0.6)', padding: '4px', borderRadius: '9999px', border: '1px solid var(--border-color)' }}>
+        <div style={{ display: 'flex', gap: '4px', background: 'rgba(255, 255, 255, 0.45)', backdropFilter: 'blur(16px)', padding: '4px', borderRadius: '9999px', border: '1px solid rgba(255, 255, 255, 0.8)' }}>
           <button
             onClick={() => setMainTab('ocr')}
             className={`nav-tab-btn ${mainTab === 'ocr' ? 'active' : ''}`}
           >
-            <FileText size={15} />
-            OCR & Extraction
+            <FileText size={14} />
+            OCR & Extract
           </button>
           <button
             onClick={() => setMainTab('status')}
             className={`nav-tab-btn ${mainTab === 'status' ? 'active' : ''}`}
           >
-            <Activity size={15} />
+            <Activity size={14} />
             Status & Security
             {securityEvents.filter(e => e.type === 'UNAUTHORIZED_LOGIN_ATTEMPT').length > 0 && (
-              <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#f43f5e', display: 'inline-block' }} />
+              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#e11d48', display: 'inline-block' }} />
             )}
           </button>
           <button
             onClick={() => setMainTab('chat')}
             className={`nav-tab-btn ${mainTab === 'chat' ? 'active' : ''}`}
           >
-            <MessageSquare size={15} />
+            <MessageSquare size={14} />
             Team Chat
-            <span style={{ fontSize: '0.7rem', background: 'rgba(56, 189, 248, 0.2)', color: '#38bdf8', padding: '1px 6px', borderRadius: '9999px' }}>
+            <span style={{ fontSize: '0.68rem', background: 'rgba(2, 132, 199, 0.14)', color: '#0369a1', padding: '1px 6px', borderRadius: '9999px', fontWeight: 700 }}>
               {chatMessages.length}
             </span>
           </button>
         </div>
 
         {/* USER CONTROLS */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           {currentUser?.role === 'ADMIN' && (
             <button
               onClick={() => { fetchEmployees(); setShowAdminModal(true); }}
               className="btn-secondary"
-              style={{ padding: '6px 12px', fontSize: '0.78rem', borderColor: 'rgba(251, 191, 36, 0.4)', color: '#fbbf24' }}
+              style={{ padding: '6px 12px', fontSize: '0.76rem', borderColor: 'rgba(217, 119, 6, 0.3)', color: '#b45309' }}
             >
-              <Users size={14} />
-              Manage Employees
+              <Users size={13} />
+              Employees
             </button>
           )}
 
-          <div className="glass-panel" style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <User size={14} color="var(--accent-blue)" />
-            <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>{currentUser?.name || currentUser?.email}</span>
-            <span className={`badge ${currentUser?.role === 'ADMIN' ? 'badge-warning' : 'badge-info'}`} style={{ fontSize: '0.65rem', padding: '1px 6px' }}>
+          <div className="glass-panel" style={{ padding: '5px 11px', display: 'flex', alignItems: 'center', gap: '7px' }}>
+            <User size={13} color="#0284c7" />
+            <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#0f172a' }}>{currentUser?.name || currentUser?.email}</span>
+            <span className={`badge ${currentUser?.role === 'ADMIN' ? 'badge-warning' : 'badge-info'}`} style={{ fontSize: '0.64rem', padding: '1px 6px' }}>
               {currentUser?.role}
             </span>
           </div>
@@ -1530,78 +1815,67 @@ export default function App() {
             target="_blank"
             rel="noopener noreferrer"
             className="btn-secondary"
-            style={{ padding: '6px 12px', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '6px', textDecoration: 'none', color: '#38bdf8', borderColor: 'rgba(56, 189, 248, 0.4)' }}
-            title="Open Interactive Swagger API Documentation"
+            style={{ padding: '6px 11px', fontSize: '0.76rem', display: 'inline-flex', alignItems: 'center', gap: '5px', textDecoration: 'none', color: '#0369a1' }}
+            title="Open Interactive Swagger API Docs"
           >
-            <Terminal size={14} />
-            Swagger API
+            <Terminal size={13} />
+            API Docs
           </a>
 
           <button
             onClick={() => setShowSettings(!showSettings)}
             className="btn-secondary"
             style={{ padding: '6px 10px' }}
-            title="Configure GPU & Batch Settings"
+            title="Engine & Network Settings"
           >
-            <Settings size={15} />
+            <Settings size={14} />
           </button>
 
           <button
             onClick={handleLogout}
             className="btn-secondary"
-            style={{ padding: '6px 10px', color: 'var(--accent-rose)', borderColor: 'rgba(244, 63, 94, 0.3)' }}
+            style={{ padding: '6px 10px', color: '#be123c' }}
             title="Sign Out"
           >
-            <LogOut size={15} />
+            <LogOut size={14} />
           </button>
         </div>
       </header>
 
       {/* SETTINGS DRAWER */}
       {showSettings && (
-        <div className="glass-panel" style={{ padding: '20px', marginBottom: '24px', borderColor: 'rgba(56, 189, 248, 0.3)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+        <div className="glass-panel" style={{ padding: '16px 18px', marginBottom: '14px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Settings size={18} color="var(--accent-blue)" />
-              <h3 style={{ fontSize: '1.05rem', fontWeight: 700 }}>Extraction & Engine Configuration</h3>
+              <Settings size={16} color="#0284c7" />
+              <h3 style={{ fontSize: '0.96rem', fontWeight: 700, color: '#0f172a' }}>Engine &amp; Network Settings</h3>
             </div>
             <button
               onClick={() => setShowSettings(false)}
-              style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.85rem' }}
+              style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}
             >
               Close
             </button>
           </div>
 
           {/* Network Tunnel Architecture Selector */}
-          <div style={{ marginBottom: '18px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
-              <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                Remote GPU Connection Option (Kaggle / Colab):
+          <div style={{ marginBottom: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', flexWrap: 'wrap', gap: '8px' }}>
+              <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#334155' }}>
+                Kaggle GPU Connection:
               </span>
               <button
                 type="button"
                 onClick={() => setShowTunnelComparison(!showTunnelComparison)}
-                style={{
-                  background: 'rgba(56, 189, 248, 0.1)',
-                  border: '1px solid rgba(56, 189, 248, 0.35)',
-                  color: 'var(--accent-blue)',
-                  borderRadius: '6px',
-                  padding: '4px 10px',
-                  fontSize: '0.75rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px'
-                }}
+                className="btn-secondary"
+                style={{ padding: '4px 10px', fontSize: '0.74rem', color: '#0369a1' }}
               >
-                <HelpCircle size={14} />
-                {showTunnelComparison ? 'Hide Architecture Analysis' : 'Tailscale vs Cloudflare: Pros & Cons'}
+                <HelpCircle size={13} />
+                {showTunnelComparison ? 'Hide Comparison' : 'Tailscale vs Cloudflare'}
               </button>
             </div>
 
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
               <button
                 type="button"
                 onClick={() => {
@@ -1609,12 +1883,12 @@ export default function App() {
                   localStorage.setItem('careguide_tunnel_type', 'cloudflare');
                 }}
                 style={{
-                  padding: '8px 14px',
+                  padding: '6px 12px',
                   borderRadius: '8px',
-                  border: tunnelType === 'cloudflare' ? '1px solid #38bdf8' : '1px solid var(--border-color)',
-                  backgroundColor: tunnelType === 'cloudflare' ? 'rgba(56, 189, 248, 0.15)' : '#070d19',
-                  color: tunnelType === 'cloudflare' ? '#38bdf8' : 'var(--text-muted)',
-                  fontSize: '0.8rem',
+                  border: tunnelType === 'cloudflare' ? '1px solid #0284c7' : '1px solid rgba(15, 23, 42, 0.12)',
+                  backgroundColor: tunnelType === 'cloudflare' ? 'rgba(2, 132, 199, 0.12)' : 'rgba(255, 255, 255, 0.5)',
+                  color: tunnelType === 'cloudflare' ? '#0369a1' : '#475569',
+                  fontSize: '0.78rem',
                   fontWeight: 600,
                   cursor: 'pointer',
                   display: 'flex',
@@ -1622,8 +1896,8 @@ export default function App() {
                   gap: '6px'
                 }}
               >
-                <Radio size={14} />
-                Cloudflare Quick Tunnel (Default)
+                <Radio size={13} />
+                Cloudflare Tunnel
               </button>
 
               <button
@@ -1633,12 +1907,12 @@ export default function App() {
                   localStorage.setItem('careguide_tunnel_type', 'tailscale');
                 }}
                 style={{
-                  padding: '8px 14px',
+                  padding: '6px 12px',
                   borderRadius: '8px',
-                  border: tunnelType === 'tailscale' ? '1px solid #10b981' : '1px solid var(--border-color)',
-                  backgroundColor: tunnelType === 'tailscale' ? 'rgba(16, 185, 129, 0.15)' : '#070d19',
-                  color: tunnelType === 'tailscale' ? '#34d399' : 'var(--text-muted)',
-                  fontSize: '0.8rem',
+                  border: tunnelType === 'tailscale' ? '1px solid #059669' : '1px solid rgba(15, 23, 42, 0.12)',
+                  backgroundColor: tunnelType === 'tailscale' ? 'rgba(16, 185, 129, 0.14)' : 'rgba(255, 255, 255, 0.5)',
+                  color: tunnelType === 'tailscale' ? '#047857' : '#475569',
+                  fontSize: '0.78rem',
                   fontWeight: 600,
                   cursor: 'pointer',
                   display: 'flex',
@@ -1646,8 +1920,8 @@ export default function App() {
                   gap: '6px'
                 }}
               >
-                <ShieldCheck size={14} />
-                Tailscale WireGuard Mesh (New Option!)
+                <ShieldCheck size={13} />
+                Tailscale Mesh
               </button>
 
               <button
@@ -1657,12 +1931,12 @@ export default function App() {
                   localStorage.setItem('careguide_tunnel_type', 'local');
                 }}
                 style={{
-                  padding: '8px 14px',
+                  padding: '6px 12px',
                   borderRadius: '8px',
-                  border: tunnelType === 'local' ? '1px solid #c084fc' : '1px solid var(--border-color)',
-                  backgroundColor: tunnelType === 'local' ? 'rgba(192, 132, 252, 0.15)' : '#070d19',
-                  color: tunnelType === 'local' ? '#c084fc' : 'var(--text-muted)',
-                  fontSize: '0.8rem',
+                  border: tunnelType === 'local' ? '1px solid #7c3aed' : '1px solid rgba(15, 23, 42, 0.12)',
+                  backgroundColor: tunnelType === 'local' ? 'rgba(124, 58, 237, 0.12)' : 'rgba(255, 255, 255, 0.5)',
+                  color: tunnelType === 'local' ? '#6d28d9' : '#475569',
+                  fontSize: '0.78rem',
                   fontWeight: 600,
                   cursor: 'pointer',
                   display: 'flex',
@@ -1670,125 +1944,54 @@ export default function App() {
                   gap: '6px'
                 }}
               >
-                <Cpu size={14} />
-                Direct Localhost (Port 8000)
+                <Cpu size={13} />
+                Localhost (8000)
               </button>
             </div>
           </div>
 
-          {/* Pros & Cons Educational Comparison Card */}
+          {/* Pros & Cons Compact Comparison Card */}
           {showTunnelComparison && (
-            <div style={{
-              marginBottom: '20px',
-              padding: '16px',
-              borderRadius: '12px',
-              background: 'rgba(15, 23, 42, 0.95)',
-              border: '1px solid rgba(56, 189, 248, 0.35)',
-              fontSize: '0.82rem',
-              color: '#cbd5e1'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-                <Info size={18} color="#38bdf8" />
-                <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 700, color: '#f8fafc' }}>
-                  Architecture Comparison: Tailscale WireGuard Mesh vs. Cloudflare Quick Tunnel
-                </h4>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                {/* Tailscale Column */}
-                <div style={{ padding: '14px', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px', color: '#34d399', fontWeight: 700, fontSize: '0.88rem' }}>
-                    <ShieldCheck size={16} />
-                    Tailscale WireGuard Mesh (Option)
-                  </div>
-                  <div style={{ marginBottom: '8px' }}>
-                    <strong style={{ color: '#34d399', fontSize: '0.75rem', textTransform: 'uppercase' }}>Pros (Advantages):</strong>
-                    <ul style={{ margin: '4px 0 8px 18px', padding: 0, lineHeight: 1.5, fontSize: '0.8rem' }}>
-                      <li><strong>Zero Public Exposure:</strong> Remote GPU is isolated inside your private Tailnet; immune to bots, port scans, and web crawlers.</li>
-                      <li><strong>No 100s Timeout:</strong> Direct P2P avoids Cloudflare free-tier's 100-second <code>Error 524</code> limit—ideal for heavy 1,000-page batch runs.</li>
-                      <li><strong>Direct P2P Throughput:</strong> Low latency UDP WireGuard tunnels between Kaggle/Colab and host without proxy hair-pinning.</li>
-                      <li><strong>Persistent Static IP / MagicDNS:</strong> Fixed <code>100.x.y.z</code> or <code>kaggle-gpu.ts.net</code> that doesn't change every session.</li>
-                    </ul>
-                  </div>
-                  <div>
-                    <strong style={{ color: '#f87171', fontSize: '0.75rem', textTransform: 'uppercase' }}>Cons (Trade-offs):</strong>
-                    <ul style={{ margin: '4px 0 0 18px', padding: 0, lineHeight: 1.5, fontSize: '0.8rem' }}>
-                      <li>Requires a free Tailscale account and generating an auth key (<code>tskey-auth-...</code>).</li>
-                      <li>Both local machine and Kaggle/Colab notebook must authenticate to the same Tailnet.</li>
-                    </ul>
-                  </div>
+            <div className="glass-subcard" style={{ marginBottom: '14px', padding: '12px 14px', fontSize: '0.78rem', color: '#334155' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
+                <div style={{ padding: '10px 12px', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
+                  <div style={{ color: '#047857', fontWeight: 700, marginBottom: '4px' }}>Tailscale WireGuard Mesh</div>
+                  <div><strong style={{ color: '#047857' }}>Pros:</strong> Private Tailnet, no 100s timeout, direct P2P speed, static IP.</div>
+                  <div style={{ marginTop: '3px' }}><strong style={{ color: '#be123c' }}>Cons:</strong> Needs Tailscale account &amp; auth key on both sides.</div>
                 </div>
-
-                {/* Cloudflare Column */}
-                <div style={{ padding: '14px', borderRadius: '8px', background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.25)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px', color: '#38bdf8', fontWeight: 700, fontSize: '0.88rem' }}>
-                    <Radio size={16} />
-                    Cloudflare Quick Tunnel (Default)
-                  </div>
-                  <div style={{ marginBottom: '8px' }}>
-                    <strong style={{ color: '#38bdf8', fontSize: '0.75rem', textTransform: 'uppercase' }}>Pros (Advantages):</strong>
-                    <ul style={{ margin: '4px 0 8px 18px', padding: 0, lineHeight: 1.5, fontSize: '0.8rem' }}>
-                      <li><strong>Zero-Account Setup:</strong> Run 1 shell command on Kaggle/Colab without any signup, account, or API key.</li>
-                      <li><strong>Universal Public Access:</strong> Accessible from any device or browser without installing software.</li>
-                      <li><strong>Instant HTTPS:</strong> Auto-provisions free Cloudflare SSL certificate out of the box.</li>
-                    </ul>
-                  </div>
-                  <div>
-                    <strong style={{ color: '#f87171', fontSize: '0.75rem', textTransform: 'uppercase' }}>Cons (Trade-offs):</strong>
-                    <ul style={{ margin: '4px 0 0 18px', padding: 0, lineHeight: 1.5, fontSize: '0.8rem' }}>
-                      <li><strong>100s Hard Timeout:</strong> Requests taking &gt;100s are terminated by Cloudflare with <code>524 Gateway Timeout</code>.</li>
-                      <li><strong>Public URL Exposure:</strong> <code>trycloudflare.com</code> URL is publicly reachable if discovered.</li>
-                      <li><strong>Random Dynamic URL:</strong> Subdomain changes on every notebook restart.</li>
-                    </ul>
-                  </div>
+                <div style={{ padding: '10px 12px', borderRadius: '8px', background: 'rgba(2, 132, 199, 0.08)', border: '1px solid rgba(2, 132, 199, 0.25)' }}>
+                  <div style={{ color: '#0369a1', fontWeight: 700, marginBottom: '4px' }}>Cloudflare Quick Tunnel</div>
+                  <div><strong style={{ color: '#0369a1' }}>Pros:</strong> 1-command launch, zero account required.</div>
+                  <div style={{ marginTop: '3px' }}><strong style={{ color: '#be123c' }}>Cons:</strong> 100s timeout cap, public URL, changes each restart.</div>
                 </div>
               </div>
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr', gap: '20px', alignItems: 'flex-end' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 0.8fr', gap: '12px', alignItems: 'end' }}>
             <div>
-              <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '6px' }}>
-                {tunnelType === 'tailscale'
-                  ? 'Tailscale Mesh Node / MagicDNS URL:'
-                  : tunnelType === 'local'
-                  ? 'Local / Direct GPU Server URL:'
-                  : 'Baidu/Unlimited-OCR Kaggle Cloudflare Tunnel URL:'}
+              <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>
+                {tunnelType === 'tailscale' ? 'Tailscale Node URL' : tunnelType === 'local' ? 'Local GPU URL' : 'Cloudflare Tunnel URL'}
               </label>
               <input
                 type="text"
+                className="glass-input"
                 value={apiUrl}
                 onChange={(e) => setApiUrl(e.target.value)}
                 placeholder={
                   tunnelType === 'tailscale'
-                    ? 'http://100.x.y.z:8000 or http://kaggle-gpu.tailnet-name.ts.net:8000'
+                    ? 'http://100.x.y.z:8000'
                     : tunnelType === 'local'
                     ? 'http://127.0.0.1:8000'
-                    : 'https://xxxx.trycloudflare.com (or leave empty for native/mock)'
+                    : 'https://xxxx.trycloudflare.com'
                 }
-                style={{
-                  width: '100%',
-                  padding: '10px 14px',
-                  borderRadius: '8px',
-                  border: '1px solid var(--border-color)',
-                  backgroundColor: '#070d19',
-                  color: '#fff',
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: '0.85rem'
-                }}
+                style={{ width: '100%', padding: '8px 12px', fontSize: '0.82rem' }}
               />
-              <div style={{ marginTop: '4px', fontSize: '0.72rem', color: tunnelType === 'tailscale' ? '#34d399' : 'var(--text-muted)' }}>
-                {tunnelType === 'tailscale'
-                  ? '🔒 Direct WireGuard P2P • No 100s timeout limit • Zero public internet exposure'
-                  : tunnelType === 'local'
-                  ? '💻 Direct host loopback execution (Port 8000)'
-                  : '🌐 Public HTTPS endpoint • Zero-account setup (Cloudflare 100s timeout applies)'}
-              </div>
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '6px' }}>
-                Batch Window Size (Pages per pass): <strong>{batchSize}</strong>
+              <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>
+                Batch Window: <strong>{batchSize} pages</strong>
               </label>
               <input
                 type="range"
@@ -1797,287 +2000,124 @@ export default function App() {
                 step="1"
                 value={batchSize}
                 onChange={(e) => setBatchSize(parseInt(e.target.value))}
-                style={{ width: '100%', accentColor: 'var(--accent-blue)' }}
+                style={{ width: '100%', accentColor: '#0284c7' }}
               />
-              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                Downscaled to max 1600px with cv2.INTER_AREA (90% bandwidth saved)
-              </span>
+              <span style={{ fontSize: '0.7rem', color: '#64748b' }}>Max 1600px optimized</span>
             </div>
 
             <div>
-              <button
-                onClick={checkHealth}
-                className="btn-secondary"
-                style={{ width: '100%', justifyContent: 'center' }}
-              >
-                <RefreshCw size={16} />
-                Ping Health Check
+              <button onClick={checkHealth} className="btn-secondary" style={{ width: '100%', justifyContent: 'center' }}>
+                <RefreshCw size={14} />
+                Ping Health
               </button>
             </div>
           </div>
 
-          {/* Quick Colab / Kaggle Command Snippet */}
-          <div style={{ marginTop: '14px', padding: '10px 14px', borderRadius: '8px', background: '#070d19', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-              <span style={{ fontWeight: 600, color: '#f8fafc' }}>
-                {tunnelType === 'tailscale' ? 'Start Tailscale on Kaggle / Colab GPU:' : 'Start Cloudflare Tunnel on Kaggle / Colab GPU:'}
-              </span>{' '}
-              <code style={{ color: tunnelType === 'tailscale' ? '#34d399' : '#38bdf8', marginLeft: '6px' }}>
-                {tunnelType === 'tailscale'
-                  ? '!curl -fsSL https://tailscale.com/install.sh | sh && tailscale up --authkey=YOUR_KEY --hostname=kaggle-gpu'
-                  : '!wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb && dpkg -i cloudflared-linux-amd64.deb && cloudflared tunnel --url http://localhost:8000'}
-              </code>
-            </div>
+          <div className="glass-subcard" style={{ marginTop: '10px', padding: '8px 12px', fontSize: '0.72rem', color: '#334155', overflowX: 'auto' }}>
+            <strong>Colab / Kaggle:</strong>{' '}
+            <code style={{ color: tunnelType === 'tailscale' ? '#047857' : '#0369a1' }}>
+              {tunnelType === 'tailscale'
+                ? '!curl -fsSL https://tailscale.com/install.sh | sh && tailscale up --authkey=KEY --hostname=kaggle-gpu'
+                : '!cloudflared tunnel --url http://localhost:8000'}
+            </code>
           </div>
 
-          {/* Gemini API Key Configuration Section for Bangla & <85% Fallback */}
-          <div style={{ marginTop: '20px', padding: '16px', borderRadius: '12px', background: 'rgba(59, 7, 100, 0.22)', border: '1px solid rgba(192, 132, 252, 0.3)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Sparkles size={18} color="#ffffff" />
-                <span style={{ fontSize: '0.92rem', fontWeight: 700, color: '#f3e8ff' }}>
-                  Gemini Vision AI (Bangla &lt;85% Confidence Fallback)
+          {/* Compact Gemini / Supabase / Dev API Row */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px', marginTop: '12px' }}>
+            {/* Gemini Key */}
+            <div className="glass-subcard" style={{ padding: '12px 14px', borderColor: 'rgba(124, 58, 237, 0.22)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Sparkles size={14} color="#7c3aed" /> Gemini API Key
+                </span>
+                {geminiStatus && (
+                  <span className={`badge ${geminiStatus === 'valid' ? 'badge-success' : 'badge-error'}`} style={{ fontSize: '0.68rem' }}>
+                    {geminiStatus === 'valid' ? 'Active' : 'Invalid'}
+                  </span>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <input
+                  type={showGeminiKey ? 'text' : 'password'}
+                  className="glass-input"
+                  value={geminiKey}
+                  onChange={(e) => handleGeminiKeyChange(e.target.value)}
+                  placeholder="AIzaSy..."
+                  style={{ flex: 1, padding: '7px 10px', fontSize: '0.8rem' }}
+                />
+                <button type="button" onClick={() => setShowGeminiKey(!showGeminiKey)} className="btn-secondary" style={{ padding: '6px 10px', fontSize: '0.75rem' }}>
+                  {showGeminiKey ? 'Hide' : 'Show'}
+                </button>
+                <button type="button" onClick={verifyGeminiKey} disabled={isVerifyingGemini || !geminiKey.trim()} className="btn-primary" style={{ padding: '6px 12px', fontSize: '0.76rem' }}>
+                  {isVerifyingGemini ? '...' : 'Verify'}
+                </button>
+              </div>
+            </div>
+
+            {/* Supabase DB */}
+            <div className="glass-subcard" style={{ padding: '12px 14px', borderColor: 'rgba(16, 185, 129, 0.24)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Database size={14} color="#059669" /> Supabase Cloud DB
+                </span>
+                <span className={`badge ${supabaseStatus?.connected ? 'badge-success' : 'badge-error'}`} style={{ fontSize: '0.68rem' }}>
+                  {supabaseStatus?.connected ? (supabaseStatus.schema_ready ? 'Ready' : 'Pending SQL') : 'Offline'}
                 </span>
               </div>
-              {geminiStatus && (
-                <span className={`badge ${geminiStatus === 'valid' ? 'badge-success' : 'badge-error'}`}>
-                  {geminiStatus === 'valid' ? 'Key Active & Verified' : 'Invalid API Key'}
-                </span>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                <button type="button" onClick={checkSupabaseStatus} disabled={isCheckingSupabase} className="btn-secondary" style={{ padding: '6px 10px', fontSize: '0.75rem' }}>
+                  <RefreshCw size={12} className={isCheckingSupabase ? 'spin' : ''} /> Ping
+                </button>
+                <button type="button" onClick={handleCopySql} className="btn-secondary" style={{ padding: '6px 10px', fontSize: '0.75rem' }}>
+                  {copiedSql ? 'Copied!' : 'Copy DDL'}
+                </button>
+                <button type="button" onClick={() => { if (!schemaSqlText) fetchSqlSchema(); setShowSqlSchema(!showSqlSchema); }} className="btn-secondary" style={{ padding: '6px 10px', fontSize: '0.75rem' }}>
+                  {showSqlSchema ? 'Hide SQL' : 'SQL'}
+                </button>
+              </div>
+              {showSqlSchema && (
+                <pre className="glass-subcard" style={{ marginTop: '8px', padding: '8px', fontSize: '0.7rem', color: '#1e293b', maxHeight: '110px', overflowY: 'auto', whiteSpace: 'pre-wrap' }}>
+                  {schemaSqlText || '-- Run supabase_schema.sql'}
+                </pre>
               )}
             </div>
-            <p style={{ fontSize: '0.78rem', color: '#d8b4fe', marginBottom: '12px', lineHeight: 1.5 }}>
-              For Bangla (বাংলা), corrupted/failed status, or confidence &lt;85%, elements are bundled into packets
-              of up to 20 elements and passed combinedly to Gemini Vision AI for high-accuracy differentiated transcription.
-            </p>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <input
-                type={showGeminiKey ? 'text' : 'password'}
-                value={geminiKey}
-                onChange={(e) => handleGeminiKeyChange(e.target.value)}
-                placeholder="Paste your Gemini API key (AIzaSy...)"
-                style={{
-                  flex: 1,
-                  padding: '10px 14px',
-                  borderRadius: '8px',
-                  border: '1px solid rgba(192, 132, 252, 0.4)',
-                  backgroundColor: '#070d19',
-                  color: '#fff',
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: '0.85rem'
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => setShowGeminiKey(!showGeminiKey)}
-                className="btn-secondary"
-                style={{ padding: '0 14px', fontSize: '0.82rem' }}
-              >
-                {showGeminiKey ? 'Hide' : 'Show'}
-              </button>
-              <button
-                type="button"
-                onClick={verifyGeminiKey}
-                disabled={isVerifyingGemini || !geminiKey.trim()}
-                className="btn-primary"
-                style={{
-                  padding: '10px 18px',
-                  fontSize: '0.85rem',
-                  background: 'linear-gradient(135deg, #7c3aed 0%, #c084fc 100%)'
-                }}
-              >
-                {isVerifyingGemini ? 'Testing...' : 'Verify Key'}
-              </button>
-            </div>
-          </div>
 
-          {/* Supabase Database Configuration & Schema Migration */}
-          <div style={{ marginTop: '20px', padding: '16px', borderRadius: '12px', background: 'rgba(6, 78, 59, 0.22)', border: '1px solid rgba(52, 211, 153, 0.3)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Database size={18} color="#34d399" />
-                <span style={{ fontSize: '0.92rem', fontWeight: 700, color: '#ecfdf5' }}>
-                  Supabase PostgreSQL Database (Cloud Persistence)
+            {/* Developer API */}
+            <div className="glass-subcard" style={{ padding: '12px 14px', borderColor: 'rgba(2, 132, 199, 0.24)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Terminal size={14} color="#0284c7" /> Developer API
                 </span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {supabaseStatus?.connected ? (
-                  <span className={`badge ${supabaseStatus.schema_ready ? 'badge-success' : 'badge-warning'}`}>
-                    {supabaseStatus.schema_ready ? 'Tables Ready' : 'Connected (Pending Schema)'}
-                  </span>
-                ) : (
-                  <span className="badge badge-error">Disconnected</span>
-                )}
-                {supabaseStatus?.latency_sec && (
-                  <span style={{ fontSize: '0.75rem', color: '#6ee7b7' }}>
-                    {supabaseStatus.latency_sec}s latency
-                  </span>
-                )}
-              </div>
-            </div>
-
-            <p style={{ fontSize: '0.78rem', color: '#a7f3d0', marginBottom: '12px', lineHeight: 1.5 }}>
-              Connected to <strong>{supabaseStatus?.url || 'https://czkvtyvcoovhecxmjwjh.supabase.co'}</strong>.
-              Stores extraction jobs, documents, validated invoices, relational line items, and Task 3 audit findings.
-            </p>
-
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                onClick={checkSupabaseStatus}
-                disabled={isCheckingSupabase}
-                className="btn-secondary"
-                style={{ padding: '8px 14px', fontSize: '0.82rem' }}
-              >
-                <RefreshCw size={14} className={isCheckingSupabase ? 'spin' : ''} />
-                {isCheckingSupabase ? 'Checking...' : 'Ping Supabase DB'}
-              </button>
-
-              <button
-                type="button"
-                onClick={handleCopySql}
-                className="btn-secondary"
-                style={{
-                  padding: '8px 14px',
-                  fontSize: '0.82rem',
-                  borderColor: copiedSql ? '#34d399' : 'rgba(52, 211, 153, 0.4)',
-                  color: copiedSql ? '#34d399' : '#ecfdf5'
-                }}
-                title="Copy ready-to-run PostgreSQL DDL to paste in Supabase SQL editor"
-              >
-                {copiedSql ? <Check size={14} color="#34d399" /> : <Copy size={14} />}
-                {copiedSql ? 'SQL Copied!' : 'Copy Schema SQL (DDL)'}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  if (!schemaSqlText) fetchSqlSchema();
-                  setShowSqlSchema(!showSqlSchema);
-                }}
-                className="btn-secondary"
-                style={{ padding: '8px 14px', fontSize: '0.82rem' }}
-              >
-                {showSqlSchema ? 'Hide SQL DDL' : 'View SQL DDL'}
-              </button>
-            </div>
-
-            {/* Collapsible Schema SQL Preview */}
-            {showSqlSchema && (
-              <div style={{ marginTop: '12px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                  <span style={{ fontSize: '0.75rem', color: '#6ee7b7' }}>Run in Supabase Dashboard &gt; SQL Editor:</span>
-                </div>
-                <pre style={{
-                  backgroundColor: '#070d19',
-                  border: '1px solid rgba(52, 211, 153, 0.3)',
-                  borderRadius: '8px',
-                  padding: '12px',
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: '0.75rem',
-                  color: '#a7f3d0',
-                  maxHeight: '180px',
-                  overflowY: 'auto',
-                  whiteSpace: 'pre-wrap'
-                }}>
-                  {schemaSqlText || '-- Run supabase_schema.sql in Supabase SQL editor'}
-                </pre>
-              </div>
-            )}
-          </div>
-
-          {/* CareGuide Developer REST API & Swagger UI Portal */}
-          <div style={{ marginTop: '20px', padding: '16px', borderRadius: '12px', background: 'rgba(14, 165, 233, 0.12)', border: '1px solid rgba(56, 189, 248, 0.3)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Terminal size={18} color="#38bdf8" />
-                <span style={{ fontSize: '0.92rem', fontWeight: 700, color: '#f0f9ff' }}>
-                  CareGuide Developer API & Swagger Portal
-                </span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span className="badge badge-info" style={{ background: 'rgba(56, 189, 248, 0.2)', color: '#38bdf8' }}>
-                  OpenAPI 3.1
-                </span>
-                <a
-                  href="/docs"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn-primary"
-                  style={{ padding: '6px 14px', fontSize: '0.78rem', textDecoration: 'none', background: '#38bdf8', color: '#000000', border: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                >
-                  <ExternalLink size={13} />
-                  Open Swagger UI (/docs)
+                <a href="/docs" target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.74rem', fontWeight: 600, color: '#0284c7', textDecoration: 'none' }}>
+                  Swagger ↗
                 </a>
               </div>
-            </div>
-
-            <p style={{ fontSize: '0.78rem', color: '#bae6fd', marginBottom: '14px', lineHeight: 1.5 }}>
-              Integrate CareGuide programmatically into your apps, services, and pipelines. Generate a high-entropy API key (<code style={{ color: '#38bdf8' }}>cg_live_...</code>) below and authenticate in the Swagger UI.
-            </p>
-
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '12px' }}>
-              <input
-                type="text"
-                value={devKeyName}
-                onChange={(e) => setDevKeyName(e.target.value)}
-                placeholder="Client / App Name (e.g. mobile-app, partner-01)"
-                style={{
-                  flex: 1,
-                  minWidth: '220px',
-                  padding: '9px 12px',
-                  borderRadius: '8px',
-                  border: '1px solid rgba(56, 189, 248, 0.3)',
-                  backgroundColor: '#070d19',
-                  color: '#fff',
-                  fontSize: '0.82rem'
-                }}
-              />
-              <button
-                type="button"
-                onClick={handleGenerateApiKey}
-                disabled={isGeneratingDevKey}
-                className="btn-secondary"
-                style={{ padding: '9px 16px', fontSize: '0.82rem', borderColor: '#38bdf8', color: '#38bdf8', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-              >
-                <Key size={14} />
-                {isGeneratingDevKey ? 'Generating...' : 'Generate API Key'}
-              </button>
-            </div>
-
-            {devKeyError && (
-              <div style={{ fontSize: '0.75rem', color: '#fb7185', marginBottom: '10px' }}>
-                {devKeyError}
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <input
+                  type="text"
+                  className="glass-input"
+                  value={devKeyName}
+                  onChange={(e) => setDevKeyName(e.target.value)}
+                  placeholder="App name..."
+                  style={{ flex: 1, padding: '7px 10px', fontSize: '0.8rem' }}
+                />
+                <button type="button" onClick={handleGenerateApiKey} disabled={isGeneratingDevKey} className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.76rem', color: '#0369a1' }}>
+                  <Key size={13} /> {isGeneratingDevKey ? '...' : 'New Key'}
+                </button>
               </div>
-            )}
-
-            {generatedKeyData && (
-              <div style={{ background: '#070d19', border: '1px solid rgba(56, 189, 248, 0.4)', borderRadius: '8px', padding: '12px', marginTop: '10px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                  <span style={{ fontSize: '0.72rem', color: '#38bdf8', fontWeight: 700, textTransform: 'uppercase' }}>
-                    New Secret API Key Generated (Save Securely):
-                  </span>
+              {devKeyError && <div style={{ fontSize: '0.72rem', color: '#be123c', marginTop: '4px' }}>{devKeyError}</div>}
+              {generatedKeyData && (
+                <div style={{ marginTop: '8px', fontSize: '0.74rem', color: '#047857', wordBreak: 'break-all', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
+                  <code>{generatedKeyData.api_key}</code>
                   <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(generatedKeyData.api_key);
-                      setCopiedDevKey(true);
-                      setTimeout(() => setCopiedDevKey(false), 2000);
-                    }}
-                    style={{ background: 'none', border: 'none', color: '#38bdf8', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem' }}
+                    onClick={() => { navigator.clipboard.writeText(generatedKeyData.api_key); setCopiedDevKey(true); setTimeout(() => setCopiedDevKey(false), 1800); }}
+                    style={{ background: 'none', border: 'none', color: '#0284c7', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 600 }}
                   >
-                    {copiedDevKey ? <Check size={13} /> : <Copy size={13} />}
-                    {copiedDevKey ? 'Copied!' : 'Copy Key'}
+                    {copiedDevKey ? 'Copied' : 'Copy'}
                   </button>
                 </div>
-                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem', color: '#4ade80', wordBreak: 'break-all', marginBottom: '8px' }}>
-                  {generatedKeyData.api_key}
-                </div>
-                <div style={{ fontSize: '0.72rem', color: '#94a3b8', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-                  <span>ID: <strong>{generatedKeyData.key_id}</strong></span>
-                  <span>Limit: <strong>{generatedKeyData.rate_limit_rpm || 60} RPM</strong></span>
-                  <span>Scopes: <strong>{(generatedKeyData.scopes || []).join(', ')}</strong></span>
-                </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -2086,8 +2126,8 @@ export default function App() {
       {/* ================= MAIN TAB 1: OCR & EXTRACTION WORKSPACE ================= */}
       {mainTab === 'ocr' && (
         <div style={{ display: 'flex', flexDirection: 'column' }}>
-          {/* COLLAPSIBLE 1: DOCUMENT & SPREADSHEET INGESTION (UPLOAD) */}
-          <section style={{ marginBottom: '20px' }}>
+          {/* COLLAPSIBLE 1: UPLOAD */}
+          <section style={{ marginBottom: '12px' }}>
             <div
               onClick={() => setIsUploadOpen(!isUploadOpen)}
               className="collapsible-trigger"
@@ -2095,211 +2135,149 @@ export default function App() {
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
-                padding: '14px 20px',
-                backgroundColor: 'rgba(15, 23, 42, 0.65)',
-                border: '1px solid var(--border-color)',
+                padding: '10px 16px',
                 borderRadius: isUploadOpen ? '14px 14px 0 0' : '14px',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-                userSelect: 'none'
+                cursor: 'pointer'
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <UploadCloud size={18} color="#ffffff" />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: '30px', height: '30px', borderRadius: '8px', background: 'rgba(2, 132, 199, 0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <UploadCloud size={16} color="#0284c7" />
                 </div>
                 <div>
-                  <span style={{ fontSize: '0.98rem', fontWeight: 700, color: '#f8fafc' }}>
-                    Document & Spreadsheet Upload
+                  <span style={{ fontSize: '0.92rem', fontWeight: 700, color: '#0f172a' }}>
+                    Upload Files
                   </span>
-                  <span style={{ marginLeft: '10px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                    (PDF, Images, XLSX, CSV, TSV, TXT)
+                  <span style={{ marginLeft: '8px', fontSize: '0.74rem', color: '#64748b' }}>
+                    PDF • Images • XLSX • CSV • TXT
                   </span>
                 </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{
-                  fontSize: '0.75rem',
-                  padding: '2px 8px',
-                  borderRadius: '9999px',
-                  background: files.length > 0 ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                  color: files.length > 0 ? '#38bdf8' : 'var(--text-muted)',
-                  fontWeight: 600
-                }}>
-                  {files.length} file{files.length !== 1 ? 's' : ''} staged
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span className={`badge ${files.length > 0 ? 'badge-info' : ''}`} style={{ fontSize: '0.72rem' }}>
+                  {files.length} staged
                 </span>
-                {isUploadOpen ? <ChevronUp size={18} color="var(--text-muted)" /> : <ChevronDown size={18} color="var(--text-muted)" />}
+                {isUploadOpen ? <ChevronUp size={16} color="#64748b" /> : <ChevronDown size={16} color="#64748b" />}
               </div>
             </div>
 
             {isUploadOpen && (
-              <div style={{
-                padding: '20px',
-                backgroundColor: 'rgba(15, 23, 42, 0.35)',
-                border: '1px solid var(--border-color)',
-                borderTop: 'none',
-                borderRadius: '0 0 14px 14px'
-              }}>
+              <div className="glass-panel" style={{ padding: '14px 16px', borderTop: 'none', borderRadius: '0 0 14px 14px' }}>
                 <div
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={handleDrop}
-          style={{
-            border: '1px dashed rgba(255, 255, 255, 0.2)',
-            borderRadius: '16px',
-            padding: '36px 20px',
-            textAlign: 'center',
-            backgroundColor: '#070709',
-            backdropFilter: 'blur(10px)',
-            cursor: 'pointer',
-            transition: 'border-color 0.2s ease',
-          }}
-          onClick={() => document.getElementById('file-upload-input').click()}
-        >
-          <input
-            id="file-upload-input"
-            type="file"
-            multiple
-            style={{ display: 'none' }}
-            onChange={handleFileInput}
-            accept=".pdf,.jpg,.jpeg,.png,.tif,.tiff,.webp,.xlsx,.xls,.csv,.tsv,.txt"
-          />
-          <UploadCloud size={40} color="#ffffff" style={{ margin: '0 auto 12px auto' }} />
-          <h3 style={{ fontSize: '1.15rem', fontWeight: 700, marginBottom: '6px' }}>
-            Click or drag & drop documents to process
-          </h3>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', maxWidth: '620px', margin: '0 auto' }}>
-            Supports multi-page <strong>PDF</strong>, scanned images (<strong>JPG, PNG, TIFF, WEBP</strong>), data spreadsheets (<strong>XLSX, XLS, CSV, TSV</strong>), and plain text (<strong>TXT</strong>) with native Bangla support.
-          </p>
-          <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginTop: '16px', flexWrap: 'wrap' }}>
-            {['PDF (< 15ms native)', 'TIFF / JPG / PNG (OCR)', 'XLSX / XLS / CSV / TSV / TXT (Zero OCR)', 'বাংলা / English Bilingual'].map((tag, i) => (
-              <span key={i} style={{
-                background: 'rgba(30, 41, 59, 0.8)',
-                color: '#94a3b8',
-                padding: '4px 10px',
-                borderRadius: '6px',
-                fontSize: '0.75rem',
-                border: '1px solid var(--border-color)'
-              }}>
-                {tag}
-              </span>
-            ))}
-          </div>
-        </div>
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={handleDrop}
+                  style={{
+                    border: '1.5px dashed rgba(15, 23, 42, 0.18)',
+                    borderRadius: '12px',
+                    padding: '22px 16px',
+                    textAlign: 'center',
+                    background: 'rgba(255, 255, 255, 0.42)',
+                    backdropFilter: 'blur(12px)',
+                    cursor: 'pointer',
+                    transition: 'border-color 0.2s ease',
+                  }}
+                  onClick={() => document.getElementById('file-upload-input').click()}
+                >
+                  <input
+                    id="file-upload-input"
+                    type="file"
+                    multiple
+                    style={{ display: 'none' }}
+                    onChange={handleFileInput}
+                    accept=".pdf,.jpg,.jpeg,.png,.tif,.tiff,.webp,.xlsx,.xls,.csv,.tsv,.txt"
+                  />
+                  <UploadCloud size={28} color="#0284c7" style={{ margin: '0 auto 8px auto' }} />
+                  <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#0f172a', marginBottom: '4px' }}>
+                    Drop files or click to browse
+                  </h3>
+                  <p style={{ color: '#475569', fontSize: '0.8rem', margin: '0 auto' }}>
+                    PDFs run via Baidu Unlimited-OCR + Gemini &lt;85% fallback. Spreadsheets parse locally.
+                  </p>
+                </div>
 
-        {/* Selected files queue */}
-        {files.length > 0 && (
-          <div className="glass-panel" style={{ marginTop: '16px', padding: '16px 20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Layers size={18} color="var(--accent-blue)" />
-                <span style={{ fontSize: '0.92rem', fontWeight: 600 }}>
-                  Enqueued Files ({files.length}):
-                </span>
-              </div>
-              <button
-                onClick={clearAll}
-                disabled={isProcessing}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--accent-rose)',
-                  cursor: isProcessing ? 'not-allowed' : 'pointer',
-                  fontSize: '0.82rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px'
-                }}
-              >
-                <Trash2 size={14} /> Clear All
-              </button>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '200px', overflowY: 'auto' }}>
-              {files.map((file, idx) => {
-                const info = getFileCategory(file.name);
-                const IconComponent = info.icon;
-                const sizeKb = (file.size / 1024).toFixed(1);
-                const sizeStr = file.size > 1024 * 1024 ? `${(file.size / (1024 * 1024)).toFixed(2)} MB` : `${sizeKb} KB`;
-
-                return (
-                  <div
-                    key={idx}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '8px 12px',
-                      borderRadius: '8px',
-                      backgroundColor: 'rgba(30, 41, 59, 0.4)',
-                      border: '1px solid rgba(148, 163, 184, 0.08)'
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <IconComponent size={18} color="var(--accent-blue)" />
-                      <div>
-                        <span style={{ fontSize: '0.88rem', fontWeight: 600, color: '#f8fafc' }}>
-                          {file.name}
-                        </span>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: '10px' }}>
-                          {sizeStr}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <span style={{
-                        fontSize: '0.72rem',
-                        fontWeight: 600,
-                        padding: '2px 8px',
-                        borderRadius: '4px',
-                        backgroundColor: info.type === 'tabular' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(56, 189, 248, 0.15)',
-                        color: info.type === 'tabular' ? '#f59e0b' : '#38bdf8'
-                      }}>
-                        {info.route}
+                {/* Selected files queue */}
+                {files.length > 0 && (
+                  <div className="glass-subcard" style={{ marginTop: '12px', padding: '12px 14px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <span style={{ fontSize: '0.84rem', fontWeight: 700, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Layers size={15} color="#0284c7" />
+                        Queued ({files.length})
                       </span>
                       <button
-                        onClick={() => removeFile(idx)}
+                        onClick={clearAll}
                         disabled={isProcessing}
-                        style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }}
-                        title="Remove file"
+                        style={{ background: 'none', border: 'none', color: '#be123c', cursor: isProcessing ? 'not-allowed' : 'pointer', fontSize: '0.78rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}
                       >
-                        <Trash2 size={14} />
+                        <Trash2 size={13} /> Clear
+                      </button>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '160px', overflowY: 'auto' }}>
+                      {files.map((file, idx) => {
+                        const info = getFileCategory(file.name);
+                        const IconComponent = info.icon;
+                        const sizeKb = (file.size / 1024).toFixed(1);
+                        const sizeStr = file.size > 1024 * 1024 ? `${(file.size / (1024 * 1024)).toFixed(2)} MB` : `${sizeKb} KB`;
+
+                        return (
+                          <div
+                            key={idx}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              padding: '6px 10px',
+                              borderRadius: '8px',
+                              backgroundColor: 'rgba(255, 255, 255, 0.55)',
+                              border: '1px solid rgba(15, 23, 42, 0.08)'
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <IconComponent size={15} color="#0284c7" />
+                              <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#0f172a' }}>{file.name}</span>
+                              <span style={{ fontSize: '0.72rem', color: '#64748b' }}>{sizeStr}</span>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span className={`badge ${info.type === 'tabular' ? 'badge-warning' : 'badge-info'}`} style={{ fontSize: '0.68rem' }}>
+                                {info.route}
+                              </span>
+                              <button
+                                onClick={() => removeFile(idx)}
+                                disabled={isProcessing}
+                                style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }}
+                                title="Remove"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div style={{ marginTop: '10px' }}>
+                      <button
+                        onClick={startExtraction}
+                        disabled={isProcessing || files.length === 0}
+                        className="btn-primary"
+                        style={{ width: '100%', padding: '10px', fontSize: '0.9rem' }}
+                      >
+                        {isProcessing ? (
+                          <><RefreshCw size={16} className="animate-spin" /> Extracting ({batchSize}/pass)...</>
+                        ) : (
+                          <><Play size={16} /> Run Extraction ({files.length} File{files.length > 1 ? 's' : ''})</>
+                        )}
                       </button>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-
-            {/* Run Pipeline CTA */}
-            <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-              <button
-                onClick={startExtraction}
-                disabled={isProcessing || files.length === 0}
-                className="btn-primary"
-                style={{ width: '100%', padding: '14px', fontSize: '1rem' }}
-              >
-                {isProcessing ? (
-                  <>
-                    <RefreshCw size={18} className="animate-spin" />
-                    Extracting Batch (20-Page Pass)...
-                  </>
-                ) : (
-                  <>
-                    <Play size={18} />
-                    Run Extraction Pipeline ({files.length} Document{files.length > 1 ? 's' : ''})
-                  </>
                 )}
-              </button>
-            </div>
-          </div>
-        )}
               </div>
             )}
           </section>
 
-          {/* COLLAPSIBLE 2: LIVE TELEMETRY & SYSTEM LOGS */}
-          <section style={{ marginBottom: '24px' }}>
+          {/* COLLAPSIBLE 2: LIVE TELEMETRY */}
+          <section style={{ marginBottom: '12px' }}>
             <div
               onClick={() => setIsLogsOpen(!isLogsOpen)}
               className="collapsible-trigger"
@@ -2307,243 +2285,139 @@ export default function App() {
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
-                padding: '14px 20px',
-                backgroundColor: 'rgba(15, 23, 42, 0.65)',
-                border: '1px solid var(--border-color)',
+                padding: '10px 16px',
                 borderRadius: isLogsOpen ? '14px 14px 0 0' : '14px',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-                userSelect: 'none'
+                cursor: 'pointer'
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Terminal size={18} color="#ffffff" />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: '30px', height: '30px', borderRadius: '8px', background: 'rgba(15, 23, 42, 0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Terminal size={15} color="#0f172a" />
                 </div>
                 <div>
-                  <span style={{ fontSize: '0.98rem', fontWeight: 700, color: '#f8fafc' }}>
-                    Live Processing Telemetry & System Logs
+                  <span style={{ fontSize: '0.92rem', fontWeight: 700, color: '#0f172a' }}>Live Telemetry</span>
+                  <span style={{ marginLeft: '8px', fontSize: '0.74rem', color: isProcessing ? '#0284c7' : '#64748b', fontWeight: 600 }}>
+                    {isProcessing ? `● Active (${elapsedSeconds.toFixed(1)}s)` : activeEngine}
                   </span>
-                  {isProcessing ? (
-                    <span style={{ marginLeft: '10px', fontSize: '0.75rem', color: '#38bdf8', fontWeight: 600 }}>
-                      ● Execution active ({elapsedSeconds.toFixed(1)}s)
-                    </span>
-                  ) : (
-                    <span style={{ marginLeft: '10px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      Engine: {activeEngine}
-                    </span>
-                  )}
                 </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{
-                  fontSize: '0.75rem',
-                  padding: '2px 8px',
-                  borderRadius: '9999px',
-                  background: isProcessing ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                  color: isProcessing ? '#38bdf8' : 'var(--text-muted)',
-                  fontWeight: 600
-                }}>
-                  {logs.length} event{logs.length !== 1 ? 's' : ''} logged
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span className={`badge ${isProcessing ? 'badge-info' : ''}`} style={{ fontSize: '0.72rem' }}>
+                  {logs.length} logs
                 </span>
-                {isLogsOpen ? <ChevronUp size={18} color="var(--text-muted)" /> : <ChevronDown size={18} color="var(--text-muted)" />}
+                {isLogsOpen ? <ChevronUp size={16} color="#64748b" /> : <ChevronDown size={16} color="#64748b" />}
               </div>
             </div>
 
             {isLogsOpen && (
-              <div style={{
-                padding: '20px',
-                backgroundColor: 'rgba(15, 23, 42, 0.35)',
-                border: '1px solid var(--border-color)',
-                borderTop: 'none',
-                borderRadius: '0 0 14px 14px'
-              }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '16px', marginBottom: '16px' }}>
-            <div className="glass-panel" style={{ padding: '14px 18px' }}>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Current Document
-              </span>
-              <div style={{ fontSize: '0.98rem', fontWeight: 700, color: '#f8fafc', marginTop: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {activeFile}
-              </div>
-            </div>
-
-            <div className="glass-panel" style={{ padding: '14px 18px' }}>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Active Extraction Engine
-              </span>
-              <div style={{ fontSize: '0.98rem', fontWeight: 700, color: 'var(--accent-blue)', marginTop: '4px' }}>
-                {activeEngine}
-              </div>
-            </div>
-
-            <div className="glass-panel" style={{ padding: '14px 18px', borderColor: activeEngine.includes('Gemini') ? 'rgba(192, 132, 252, 0.4)' : 'var(--border-color)' }}>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Gemini Request Status
-              </span>
-              <div style={{ fontSize: '0.88rem', fontWeight: 700, marginTop: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {activeEngine.includes('Gemini') ? (
-                  <>
-                    <span className="pulse-dot" style={{ backgroundColor: '#c084fc' }} />
-                    <span style={{ color: '#c084fc' }}>Active Request (Fallback)</span>
-                  </>
-                ) : geminiStatus === 'valid' ? (
-                  <>
-                    <span className="pulse-dot pulse-dot-green" />
-                    <span style={{ color: '#34d399' }}>Ready (Standby &lt;85%)</span>
-                  </>
-                ) : (
-                  <span style={{ color: '#94a3b8' }}>Not Configured</span>
-                )}
-              </div>
-            </div>
-
-            <div className="glass-panel" style={{ padding: '14px 18px' }}>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Elapsed Processing Time
-              </span>
-              <div style={{ fontSize: '0.98rem', fontWeight: 700, color: '#34d399', marginTop: '4px' }}>
-                {elapsedSeconds.toFixed(1)}s
-              </div>
-            </div>
-
-            <div className="glass-panel" style={{ padding: '14px 18px' }}>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Batch Window
-              </span>
-              <div style={{ fontSize: '0.98rem', fontWeight: 700, color: '#c084fc', marginTop: '4px' }}>
-                {batchSize} Pages / Pass
-              </div>
-            </div>
-          </div>
-
-          {/* Progress Bar */}
-          <div style={{ width: '100%', height: '6px', backgroundColor: 'rgba(30, 41, 59, 0.8)', borderRadius: '999px', overflow: 'hidden', marginBottom: '16px' }}>
-            <div
-              style={{
-                width: `${progressPercent}%`,
-                height: '100%',
-                background: 'linear-gradient(90deg, #38bdf8 0%, #818cf8 100%)',
-                transition: 'width 0.3s ease'
-              }}
-            />
-          </div>
-
-          {/* Terminal Console */}
-          <div className="glass-panel" style={{ padding: '14px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', padding: '0 4px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Terminal size={16} color="var(--accent-blue)" />
-                <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                  Live Execution Log
-                </span>
-              </div>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                {logs.length} events logged
-              </span>
-            </div>
-
-            <div className="terminal-window">
-              {logs.map((log, index) => (
-                <div key={index} className="log-entry">
-                  <span className="log-time">[{log.time}]</span>
-                  <span className={`log-tag tag-${log.tag}`}>{log.tag}</span>
-                  <span style={{ color: '#e2e8f0', wordBreak: 'break-all' }}>{log.message}</span>
+              <div className="glass-panel" style={{ padding: '14px 16px', borderTop: 'none', borderRadius: '0 0 14px 14px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px', marginBottom: '12px' }}>
+                  <div className="glass-subcard" style={{ padding: '10px 12px' }}>
+                    <span style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>File</span>
+                    <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#0f172a', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {activeFile}
+                    </div>
+                  </div>
+                  <div className="glass-subcard" style={{ padding: '10px 12px' }}>
+                    <span style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>Engine</span>
+                    <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#0284c7', marginTop: '2px' }}>{activeEngine}</div>
+                  </div>
+                  <div className="glass-subcard" style={{ padding: '10px 12px' }}>
+                    <span style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>Gemini Fallback</span>
+                    <div style={{ fontSize: '0.84rem', fontWeight: 700, marginTop: '2px', color: activeEngine.includes('Gemini') ? '#6d28d9' : geminiStatus === 'valid' ? '#047857' : '#64748b' }}>
+                      {activeEngine.includes('Gemini') ? 'Active Fallback' : geminiStatus === 'valid' ? 'Ready (<85%)' : 'Unconfigured'}
+                    </div>
+                  </div>
+                  <div className="glass-subcard" style={{ padding: '10px 12px' }}>
+                    <span style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>Elapsed</span>
+                    <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#047857', marginTop: '2px' }}>{elapsedSeconds.toFixed(1)}s</div>
+                  </div>
+                  <div className="glass-subcard" style={{ padding: '10px 12px' }}>
+                    <span style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>Batch</span>
+                    <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#6d28d9', marginTop: '2px' }}>{batchSize} / pass</div>
+                  </div>
                 </div>
-              ))}
-              <div ref={logsEndRef} />
-            </div>
-          </div>
+
+                <div style={{ width: '100%', height: '5px', backgroundColor: 'rgba(15, 23, 42, 0.08)', borderRadius: '999px', overflow: 'hidden', marginBottom: '12px' }}>
+                  <div style={{ width: `${progressPercent}%`, height: '100%', background: 'linear-gradient(90deg, #0284c7 0%, #6366f1 100%)', transition: 'width 0.3s ease' }} />
+                </div>
+
+                <div className="terminal-window">
+                  {logs.map((log, index) => (
+                    <div key={index} className="log-entry">
+                      <span className="log-time">[{log.time}]</span>
+                      <span className={`log-tag tag-${log.tag}`}>{log.tag}</span>
+                      <span style={{ color: '#1e293b', wordBreak: 'break-all' }}>{log.message}</span>
+                    </div>
+                  ))}
+                  <div ref={logsEndRef} />
+                </div>
               </div>
             )}
           </section>
 
           {/* EXTRACTION ACTION BAR */}
-          <div style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: '24px',
-            flexWrap: 'wrap',
-            gap: '14px',
-            padding: '16px 20px',
-            background: 'rgba(15, 23, 42, 0.65)',
-            border: '1px solid var(--border-color)',
-            borderRadius: '14px'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Play size={20} color="#000000" />
+          <div className="glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px', padding: '12px 16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ width: '34px', height: '34px', borderRadius: '9px', background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Play size={16} color="#ffffff" />
               </div>
               <div>
-                <div style={{ fontSize: '1rem', fontWeight: 700, color: '#f8fafc' }}>
-                  Document Extraction & Processing Engine
-                </div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                  {files.length > 0
-                    ? `${files.length} document(s) staged • Ready for high-throughput batch extraction`
-                    : 'Stage documents in the upload section above to begin extraction'}
+                <div style={{ fontSize: '0.92rem', fontWeight: 700, color: '#0f172a' }}>OCR Extraction Engine</div>
+                <div style={{ fontSize: '0.75rem', color: '#475569' }}>
+                  {files.length > 0 ? `${files.length} file(s) ready` : 'Stage files above to start'}
                 </div>
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-              <button
-                onClick={startExtraction}
-                disabled={isProcessing || files.length === 0}
-                className="btn-primary"
-                style={{ padding: '10px 22px', fontSize: '0.92rem' }}
-              >
-                {isProcessing ? (
-                  <>
-                    <RefreshCw size={16} className="animate-spin" />
-                    Processing Batch ({batchSize} Pages/Pass)...
-                  </>
-                ) : (
-                  <>
-                    <Play size={16} />
-                    Start OCR Extraction ({files.length} File{files.length !== 1 ? 's' : ''})
-                  </>
-                )}
-              </button>
-            </div>
+            <button
+              onClick={startExtraction}
+              disabled={isProcessing || files.length === 0}
+              className="btn-primary"
+              style={{ padding: '9px 18px', fontSize: '0.84rem' }}
+            >
+              {isProcessing ? (
+                <><RefreshCw size={15} className="animate-spin" /> Processing ({batchSize}/pass)...</>
+              ) : (
+                <><Play size={15} /> Start OCR ({files.length} File{files.length !== 1 ? 's' : ''})</>
+              )}
+            </button>
           </div>
 
           {/* COMPLETED EXTRACTION RESULTS EXPLORER */}
           {results && results.documents && results.documents.length > 0 ? (
-            <section className="glass-panel" style={{ padding: '24px' }}>
+            <section className="glass-panel" style={{ padding: '18px' }}>
           {/* Summary metrics header */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '12px' }}>
             <div>
-              <h2 style={{ fontSize: '1.3rem', fontWeight: 800 }}>Extraction Results</h2>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                Processed {results.summary?.total_files} file(s) in {results.summary?.duration_sec}s
-                ({results.summary?.throughput_pages_per_sec} pages/sec) · Extracted {results.summary?.total_pages} page(s) and {results.summary?.total_sheets} sheet(s)
+              <h2 style={{ fontSize: '1.12rem', fontWeight: 800, color: '#0f172a' }}>Results</h2>
+              <p style={{ fontSize: '0.78rem', color: '#475569', marginTop: '2px' }}>
+                {results.summary?.total_files} file(s) · {results.summary?.duration_sec}s · {results.summary?.total_pages} page(s) · {results.summary?.total_sheets} sheet(s)
               </p>
             </div>
 
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-              {/* Audit Scope Selector for multi-page documents */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.05)', padding: '5px 10px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Audit Scope:</span>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <div className="glass-subcard" style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 8px' }}>
+                <span style={{ fontSize: '0.74rem', color: '#475569', fontWeight: 600 }}>Scope:</span>
                 <select
                   value={invoiceScope}
                   onChange={(e) => setInvoiceScope(e.target.value)}
                   disabled={isExtractingInvoices}
                   style={{
-                    background: '#0f172a',
-                    color: '#f8fafc',
-                    border: '1px solid rgba(168, 85, 247, 0.4)',
+                    background: 'rgba(255, 255, 255, 0.75)',
+                    color: '#0f172a',
+                    border: '1px solid rgba(15, 23, 42, 0.14)',
                     borderRadius: '6px',
-                    padding: '3px 8px',
-                    fontSize: '0.78rem',
+                    padding: '2px 6px',
+                    fontSize: '0.76rem',
+                    fontWeight: 600,
                     cursor: 'pointer'
                   }}
                 >
-                  <option value="all">All Invoices (Full Document)</option>
-                  <option value="25">First 25 Invoices (Fast ~25s)</option>
-                  <option value="50">First 50 Invoices</option>
-                  <option value="100">First 100 Invoices</option>
+                  <option value="all">All Invoices</option>
+                  <option value="25">First 25</option>
+                  <option value="50">First 50</option>
+                  <option value="100">First 100</option>
                 </select>
               </div>
 
@@ -2551,142 +2425,136 @@ export default function App() {
                 onClick={handleExtractInvoices}
                 disabled={isExtractingInvoices}
                 className="btn-primary"
-                style={{
-                  background: '#ffffff',
-                  color: '#000000',
-                  fontWeight: 600,
-                  padding: '9px 16px',
-                  fontSize: '0.86rem'
-                }}
-                title="Extract structured invoice fields & run Task 3 validation using Gemini AI"
+                style={{ padding: '7px 14px', fontSize: '0.8rem' }}
+                title="Extract & validate invoices with Gemini AI"
               >
-                {isExtractingInvoices ? <RefreshCw size={15} className="spin" /> : <Sparkles size={15} />}
-                {isExtractingInvoices ? 'Extracting Invoices...' : 'Extract & Audit Invoices (Gemini AI)'}
+                {isExtractingInvoices ? <RefreshCw size={14} className="spin" /> : <Sparkles size={14} />}
+                {isExtractingInvoices ? 'Auditing...' : 'Extract Invoices'}
               </button>
 
               {isExtractingInvoices && (
                 <button
                   onClick={handleStopExtractingInvoices}
                   className="btn-secondary"
-                  style={{
-                    background: 'rgba(239, 68, 68, 0.15)',
-                    border: '1px solid rgba(239, 68, 68, 0.4)',
-                    color: '#f87171',
-                    padding: '8px 14px',
-                    fontSize: '0.84rem'
-                  }}
-                  title="Pause extraction and keep all currently processed and auto-saved invoices"
+                  style={{ color: '#be123c', borderColor: 'rgba(225, 29, 72, 0.3)', padding: '7px 12px', fontSize: '0.78rem' }}
                 >
-                  Stop & Keep
+                  Stop
                 </button>
               )}
               {invoiceResults && (
                 <>
-                  <button
-                    onClick={handleDownloadInvoicesExcel}
-                    className="btn-primary"
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.08)',
-                      color: '#ffffff',
-                      border: '1px solid rgba(255, 255, 255, 0.15)',
-                      padding: '9px 16px',
-                      fontSize: '0.86rem'
-                    }}
-                    title="Download formatted multi-sheet Excel spreadsheet with audit results"
-                  >
-                    <FileSpreadsheet size={15} />
-                    Download Invoices (.xlsx)
+                  <button onClick={handleDownloadInvoicesExcel} className="btn-secondary" style={{ padding: '7px 12px', fontSize: '0.78rem' }}>
+                    <FileSpreadsheet size={14} color="#059669" /> Excel
                   </button>
-                  <button
-                    onClick={handleSaveToSupabase}
-                    disabled={isSavingToSupabase}
-                    className="btn-primary"
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.08)',
-                      color: '#ffffff',
-                      border: '1px solid rgba(255, 255, 255, 0.15)',
-                      padding: '9px 16px',
-                      fontSize: '0.86rem'
-                    }}
-                    title="Save all validated invoices, line items, and audit findings directly into Supabase PostgreSQL database"
-                  >
-                    {isSavingToSupabase ? <RefreshCw size={15} className="spin" /> : <Database size={15} />}
-                    {isSavingToSupabase ? 'Saving DB...' : 'Save to Supabase'}
+                  <button onClick={handleSaveToSupabase} disabled={isSavingToSupabase} className="btn-secondary" style={{ padding: '7px 12px', fontSize: '0.78rem' }}>
+                    {isSavingToSupabase ? <RefreshCw size={14} className="spin" /> : <Database size={14} color="#0284c7" />}
+                    {isSavingToSupabase ? 'Saving...' : 'Save DB'}
                   </button>
                 </>
               )}
-              <button onClick={downloadJson} className="btn-secondary" style={{ padding: '9px 14px', fontSize: '0.86rem' }}>
-                <Download size={15} />
-                JSON Report
+              <button
+                onClick={() => (summaryResult ? setActiveResultsTab('summary') : handleGenerateSummary())}
+                disabled={isGeneratingSummary}
+                className="btn-secondary"
+                style={{
+                  background: 'rgba(2, 132, 199, 0.10)',
+                  borderColor: 'rgba(2, 132, 199, 0.30)',
+                  color: '#0369a1',
+                  padding: '7px 13px',
+                  fontSize: '0.78rem'
+                }}
+              >
+                {isGeneratingSummary ? <RefreshCw size={14} className="spin" /> : <Sparkles size={14} color="#0284c7" />}
+                {isGeneratingSummary ? 'Summarizing...' : 'AI Summary & Q&A'}
               </button>
-              <button onClick={downloadZip} className="btn-secondary" style={{ padding: '9px 14px', fontSize: '0.86rem' }}>
-                <Download size={15} />
-                ZIP
+              <button onClick={downloadJson} className="btn-secondary" style={{ padding: '7px 12px', fontSize: '0.78rem' }}>
+                <Download size={14} /> JSON
+              </button>
+              <button onClick={downloadZip} className="btn-secondary" style={{ padding: '7px 12px', fontSize: '0.78rem' }}>
+                <Download size={14} /> ZIP
               </button>
             </div>
           </div>
 
-          {/* VIEW SWITCHER TABS: Extracted Documents vs Task 3 Invoice Intelligence */}
+          {/* VIEW SWITCHER TABS */}
           <div style={{
             display: 'flex',
-            gap: '8px',
-            marginBottom: '20px',
-            background: 'rgba(15, 23, 42, 0.6)',
-            padding: '6px',
+            gap: '6px',
+            flexWrap: 'wrap',
+            marginBottom: '14px',
+            background: 'rgba(255, 255, 255, 0.45)',
+            backdropFilter: 'blur(14px)',
+            padding: '4px',
             borderRadius: '10px',
-            border: '1px solid var(--border-color)',
+            border: '1px solid rgba(255, 255, 255, 0.8)',
             width: 'fit-content'
           }}>
             <button
               onClick={() => setActiveResultsTab('docs')}
               style={{
-                padding: '7px 16px',
-                borderRadius: '8px',
+                padding: '6px 14px',
+                borderRadius: '7px',
                 border: 'none',
-                backgroundColor: activeResultsTab === 'docs' ? 'var(--accent-blue)' : 'transparent',
-                color: activeResultsTab === 'docs' ? '#070d19' : 'var(--text-secondary)',
+                backgroundColor: activeResultsTab === 'docs' ? 'rgba(255, 255, 255, 0.92)' : 'transparent',
+                boxShadow: activeResultsTab === 'docs' ? '0 2px 8px rgba(15, 23, 42, 0.08)' : 'none',
+                color: activeResultsTab === 'docs' ? '#0f172a' : '#475569',
                 fontWeight: 700,
-                fontSize: '0.84rem',
+                fontSize: '0.8rem',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '8px',
-                transition: 'all 0.2s ease'
+                gap: '6px'
               }}
             >
-              <FileText size={15} />
-              Extracted Documents ({results.documents.length})
+              <FileText size={14} color={activeResultsTab === 'docs' ? '#0284c7' : '#64748b'} />
+              Documents ({results.documents.length})
             </button>
             <button
               onClick={() => setActiveResultsTab('invoices')}
               style={{
-                padding: '7px 16px',
-                borderRadius: '8px',
+                padding: '6px 14px',
+                borderRadius: '7px',
                 border: 'none',
-                backgroundColor: activeResultsTab === 'invoices' ? '#a855f7' : 'transparent',
-                color: activeResultsTab === 'invoices' ? '#ffffff' : 'var(--text-secondary)',
+                backgroundColor: activeResultsTab === 'invoices' ? 'rgba(255, 255, 255, 0.92)' : 'transparent',
+                boxShadow: activeResultsTab === 'invoices' ? '0 2px 8px rgba(15, 23, 42, 0.08)' : 'none',
+                color: activeResultsTab === 'invoices' ? '#0f172a' : '#475569',
                 fontWeight: 700,
-                fontSize: '0.84rem',
+                fontSize: '0.8rem',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '8px',
-                transition: 'all 0.2s ease'
+                gap: '6px'
               }}
             >
-              <Sparkles size={15} color={activeResultsTab === 'invoices' ? '#fff' : '#c084fc'} />
-              Task 3: Invoices & Data Validation Audit
+              <Sparkles size={14} color="#7c3aed" />
+              Invoices Audit
               {invoiceResults && (
-                <span style={{
-                  fontSize: '0.72rem',
-                  padding: '1px 6px',
-                  borderRadius: '10px',
-                  backgroundColor: invoiceResults.review_count > 0 ? '#ef4444' : '#10b981',
-                  color: '#fff',
-                  fontWeight: 800
-                }}>
+                <span className={`badge ${invoiceResults.review_count > 0 ? 'badge-error' : 'badge-success'}`} style={{ fontSize: '0.68rem', padding: '1px 6px' }}>
                   {invoiceResults.clean_count} clean · {invoiceResults.review_count} review
                 </span>
+              )}
+            </button>
+            <button
+              onClick={() => setActiveResultsTab('summary')}
+              style={{
+                padding: '6px 14px',
+                borderRadius: '7px',
+                border: 'none',
+                backgroundColor: activeResultsTab === 'summary' ? 'rgba(255, 255, 255, 0.92)' : 'transparent',
+                boxShadow: activeResultsTab === 'summary' ? '0 2px 8px rgba(15, 23, 42, 0.08)' : 'none',
+                color: activeResultsTab === 'summary' ? '#0f172a' : '#475569',
+                fontWeight: 700,
+                fontSize: '0.8rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              <MessageSquare size={14} color="#0284c7" />
+              Summary &amp; Q&amp;A
+              {summaryResult && (
+                <span className="badge badge-success" style={{ fontSize: '0.66rem', padding: '1px 6px' }}>Ready</span>
               )}
             </button>
           </div>
@@ -2694,57 +2562,26 @@ export default function App() {
           {/* VIEW 1: RAW EXTRACTED DOCUMENTS */}
           {activeResultsTab === 'docs' && (
             <div>
-              {/* Optional Prompt to run Invoice Audit */}
               {!invoiceResults && !isExtractingInvoices && (
-                <div style={{
-                  padding: '12px 18px',
-                  borderRadius: '10px',
-                  background: 'rgba(168, 85, 247, 0.1)',
-                  border: '1px solid rgba(168, 85, 247, 0.25)',
+                <div className="glass-subcard" style={{
+                  padding: '10px 14px',
+                  background: 'rgba(124, 58, 237, 0.06)',
+                  borderColor: 'rgba(124, 58, 237, 0.22)',
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
-                  marginBottom: '16px',
+                  marginBottom: '12px',
                   flexWrap: 'wrap',
                   gap: '10px'
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <Sparkles size={16} color="#c084fc" />
-                    <span style={{ fontSize: '0.85rem', color: '#e9d5ff', fontWeight: 500 }}>
-                      Need structured invoices &amp; Task 3 validation? Pass extracted text to Gemini AI to extract fields, check arithmetic, and export to Excel (.xlsx).
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
-                    <span style={{ fontSize: '0.86rem', color: '#cbd5e1' }}>Extraction Scope:</span>
-                    <select
-                      value={invoiceScope}
-                      onChange={(e) => setInvoiceScope(e.target.value)}
-                      disabled={isExtractingInvoices}
-                      style={{
-                        background: '#1e293b',
-                        color: '#f8fafc',
-                        border: '1px solid rgba(168, 85, 247, 0.5)',
-                        borderRadius: '8px',
-                        padding: '6px 14px',
-                        fontSize: '0.86rem',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      <option value="all">All Invoices (Full Document)</option>
-                      <option value="25">First 25 Invoices (Fast ~25s)</option>
-                      <option value="50">First 50 Invoices</option>
-                      <option value="100">First 100 Invoices</option>
-                    </select>
-                  </div>
-
+                  <span style={{ fontSize: '0.8rem', color: '#334155', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Sparkles size={14} color="#7c3aed" />
+                    Extract structured invoices, validate math &amp; export Excel with Gemini AI.
+                  </span>
                   <button
                     onClick={handleExtractInvoices}
                     className="btn-primary"
-                    style={{
-                      padding: '6px 14px',
-                      fontSize: '0.78rem',
-                      background: 'linear-gradient(135deg, #a855f7 0%, #6366f1 100%)'
-                    }}
+                    style={{ padding: '6px 14px', fontSize: '0.76rem', background: '#6d28d9', borderColor: '#6d28d9' }}
                   >
                     Run Task 3 Audit
                   </button>
@@ -2752,657 +2589,373 @@ export default function App() {
               )}
 
               {/* Document Tab Bar */}
-              <div style={{
-                display: 'flex',
-                gap: '8px',
-                borderBottom: '1px solid var(--border-color)',
-                paddingBottom: '12px',
-                marginBottom: '20px',
-                overflowX: 'auto'
-              }}>
-            {results.documents.map((doc, idx) => {
-              const isSelected = selectedDocIndex === idx;
-              const isSuccess = doc.status === 'SUCCESS';
-              return (
-                <button
-                  key={idx}
-                  onClick={() => {
-                    setSelectedDocIndex(idx);
-                    setSelectedPageIndex(0);
-                    setSelectedSheetIndex(0);
-                    setTableSearch('');
-                    setTablePage(0);
-                  }}
-                  style={{
-                    padding: '8px 14px',
-                    borderRadius: '8px',
-                    border: '1px solid',
-                    borderColor: isSelected ? 'var(--accent-blue)' : 'var(--border-color)',
-                    backgroundColor: isSelected ? 'rgba(56, 189, 248, 0.12)' : 'rgba(30, 41, 59, 0.5)',
-                    color: isSelected ? '#38bdf8' : 'var(--text-secondary)',
-                    fontWeight: isSelected ? 700 : 500,
-                    fontSize: '0.85rem',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    whiteSpace: 'nowrap'
-                  }}
-                >
-                  {isSuccess ? <CheckCircle2 size={14} color="#34d399" /> : <AlertCircle size={14} color="#fbbf24" />}
-                  {doc.filename}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Active Document Viewer */}
-          {selectedDoc && (
-            <div>
-              {/* DOCUMENT METADATA BAR */}
-              <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                backgroundColor: 'rgba(30, 41, 59, 0.5)',
-                padding: '12px 18px',
-                borderRadius: '10px',
-                marginBottom: '16px'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                  <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Status:</span>
-                  <span className={`badge ${selectedDoc.status === 'SUCCESS' ? 'badge-success' : 'badge-warning'}`}>
-                    {selectedDoc.status}
-                  </span>
-                  <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Engine Routing:</span>
-                  <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                    {isDocTabular ? 'Structured Tabular Extraction' : 'PDF / Image OCR & Digital Triage'}
-                  </span>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                    Duration: {selectedDoc.processing_time_sec}s
-                  </span>
-                </div>
-              </div>
-
-              {/* VIEW 1: SPREADSHEET / TABULAR VIEW */}
-              {isDocTabular ? (
-                <div>
-                  {/* Sheets sub-tabs */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-                    <div style={{ display: 'flex', gap: '6px' }}>
-                      {selectedDoc.sheets.map((sheet, sIdx) => (
-                        <button
-                          key={sIdx}
-                          onClick={() => {
-                            setSelectedSheetIndex(sIdx);
-                            setTableSearch('');
-                            setTablePage(0);
-                          }}
-                          style={{
-                            padding: '6px 12px',
-                            borderRadius: '6px',
-                            border: '1px solid',
-                            borderColor: selectedSheetIndex === sIdx ? 'var(--accent-amber)' : 'transparent',
-                            backgroundColor: selectedSheetIndex === sIdx ? 'rgba(245, 158, 11, 0.15)' : 'rgba(30, 41, 59, 0.4)',
-                            color: selectedSheetIndex === sIdx ? '#fbbf24' : 'var(--text-muted)',
-                            fontSize: '0.82rem',
-                            fontWeight: 600,
-                            cursor: 'pointer'
-                          }}
-                        >
-                          {sheet.name} ({sheet.row_count} rows)
-                        </button>
-                      ))}
-                    </div>
-
-                    <button onClick={downloadCurrentSheetCsv} className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.82rem' }}>
-                      <Download size={14} /> Download CSV
-                    </button>
-                  </div>
-
-                  {/* Search bar inside sheet */}
-                  <div style={{ marginBottom: '14px', position: 'relative' }}>
-                    <Search size={16} color="var(--text-muted)" style={{ position: 'absolute', left: '12px', top: '10px' }} />
-                    <input
-                      type="text"
-                      placeholder={`Search ${currentSheet?.row_count || 0} rows in ${currentSheet?.name}...`}
-                      value={tableSearch}
-                      onChange={(e) => {
-                        setTableSearch(e.target.value);
+              <div style={{ display: 'flex', gap: '6px', borderBottom: '1px solid rgba(15, 23, 42, 0.08)', paddingBottom: '10px', marginBottom: '12px', overflowX: 'auto' }}>
+                {results.documents.map((doc, idx) => {
+                  const isSelected = selectedDocIndex === idx;
+                  const isSuccess = doc.status === 'SUCCESS';
+                  return (
+                    <button
+                      key={idx}
+                      onClick={() => {
+                        setSelectedDocIndex(idx);
+                        setSelectedPageIndex(0);
+                        setSelectedSheetIndex(0);
+                        setTableSearch('');
                         setTablePage(0);
                       }}
                       style={{
-                        width: '100%',
-                        padding: '8px 12px 8px 36px',
+                        padding: '6px 12px',
                         borderRadius: '8px',
-                        border: '1px solid var(--border-color)',
-                        backgroundColor: '#070d19',
-                        color: '#fff',
-                        fontSize: '0.85rem'
+                        border: '1px solid',
+                        borderColor: isSelected ? '#0284c7' : 'rgba(15, 23, 42, 0.10)',
+                        backgroundColor: isSelected ? 'rgba(255, 255, 255, 0.90)' : 'rgba(255, 255, 255, 0.45)',
+                        color: isSelected ? '#0369a1' : '#334155',
+                        fontWeight: isSelected ? 700 : 500,
+                        fontSize: '0.8rem',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        whiteSpace: 'nowrap'
                       }}
-                    />
-                  </div>
+                    >
+                      {isSuccess ? <CheckCircle2 size={13} color="#059669" /> : <AlertCircle size={13} color="#d97706" />}
+                      {doc.filename}
+                    </button>
+                  );
+                })}
+              </div>
 
-                  {/* Interactive Table */}
-                  <div style={{ maxHeight: '450px', overflow: 'auto', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
-                    <table className="custom-table">
-                      <thead>
-                        <tr>
-                          {currentSheet?.columns?.map((col, cIdx) => (
-                            <th key={cIdx}>{col}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {paginatedRows.length > 0 ? (
-                          paginatedRows.map((row, rIdx) => (
-                            <tr key={rIdx}>
-                              {currentSheet.columns.map((col, cIdx) => (
-                                <td key={cIdx}>{String(row[col] ?? '')}</td>
-                              ))}
-                            </tr>
-                          ))
-                        ) : (
-                          <tr>
-                            <td colSpan={currentSheet?.columns?.length || 1} style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
-                              No matching rows found.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* Pagination controls */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px' }}>
-                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                      Showing {paginatedRows.length} of {filteredRows.length} rows (Page {tablePage + 1} of {Math.max(1, totalPages)})
-                    </span>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button
-                        onClick={() => setTablePage((p) => Math.max(0, p - 1))}
-                        disabled={tablePage === 0}
-                        className="btn-secondary"
-                        style={{ padding: '4px 10px' }}
-                      >
-                        <ChevronLeft size={16} />
-                      </button>
-                      <button
-                        onClick={() => setTablePage((p) => Math.min(totalPages - 1, p + 1))}
-                        disabled={tablePage >= totalPages - 1}
-                        className="btn-secondary"
-                        style={{ padding: '4px 10px' }}
-                      >
-                        <ChevronRight size={16} />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                /* VIEW 2: PDF / IMAGE OCR TEXT VIEW */
+              {selectedDoc && (
                 <div>
-                  {selectedDoc.pages && selectedDoc.pages.length > 0 ? (
+                  <div className="glass-subcard" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 14px', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span className={`badge ${selectedDoc.status === 'SUCCESS' ? 'badge-success' : 'badge-warning'}`}>
+                        {selectedDoc.status}
+                      </span>
+                      <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#0f172a' }}>
+                        {isDocTabular ? 'Tabular Engine' : 'Baidu Unlimited-OCR + Gemini Fallback'}
+                      </span>
+                    </div>
+                    <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                      {selectedDoc.processing_time_sec}s
+                    </span>
+                  </div>
+
+                  {isDocTabular ? (
                     <div>
-                      {/* Page navigation bar */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                            {selectedDoc.filename.startsWith('images_epoch') ? `Image ${selectedPageIndex + 1} of ${selectedDoc.pages.length}` : `Page ${selectedPageIndex + 1} of ${selectedDoc.pages.length}`}:
-                          </span>
-
-                          <div style={{ display: 'flex', gap: '4px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          {selectedDoc.sheets.map((sheet, sIdx) => (
                             <button
+                              key={sIdx}
                               onClick={() => {
-                                setViewAllImages(false);
-                                setSelectedPageIndex((p) => Math.max(0, p - 1));
+                                setSelectedSheetIndex(sIdx);
+                                setTableSearch('');
+                                setTablePage(0);
                               }}
-                              disabled={selectedPageIndex === 0 || viewAllImages}
-                              className="btn-secondary"
-                              style={{ padding: '4px 8px' }}
-                            >
-                              <ChevronLeft size={14} />
-                            </button>
-                            <button
-                              onClick={() => {
-                                setViewAllImages(false);
-                                setSelectedPageIndex((p) => Math.min(selectedDoc.pages.length - 1, p + 1));
-                              }}
-                              disabled={selectedPageIndex >= selectedDoc.pages.length - 1 || viewAllImages}
-                              className="btn-secondary"
-                              style={{ padding: '4px 8px' }}
-                            >
-                              <ChevronRight size={14} />
-                            </button>
-                          </div>
-
-                          <span style={{
-                            fontSize: '0.75rem',
-                            fontWeight: 700,
-                            padding: '3px 8px',
-                            borderRadius: '4px',
-                            backgroundColor: currentPage?.type === 'DIGITAL_TEXT' ? 'rgba(52, 211, 153, 0.15)' : 'rgba(192, 132, 252, 0.15)',
-                            color: currentPage?.type === 'DIGITAL_TEXT' ? '#34d399' : '#c084fc'
-                          }}>
-                            {currentPage?.type || 'EXTRACTED'}
-                          </span>
-
-                          {currentPage?.confidence && !viewAllImages && (
-                            <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                              Confidence: {(currentPage.confidence * 100).toFixed(1)}%
-                            </span>
-                          )}
-
-                          {currentPage?.confidence < 0.85 && !currentPage?.engine?.includes('Gemini') && !viewAllImages && (
-                            <button
-                              onClick={() => setShowSettings(true)}
                               className="btn-secondary"
                               style={{
-                                fontSize: '0.72rem',
-                                fontWeight: 700,
-                                padding: '2px 8px',
-                                borderRadius: '4px',
-                                backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                                color: '#f87171',
-                                border: '1px solid rgba(239, 68, 68, 0.4)',
-                                cursor: 'pointer'
+                                padding: '5px 10px',
+                                fontSize: '0.78rem',
+                                borderColor: selectedSheetIndex === sIdx ? '#d97706' : 'rgba(15, 23, 42, 0.1)',
+                                color: selectedSheetIndex === sIdx ? '#b45309' : '#475569'
                               }}
-                              title="Click to enter Gemini API Key in Settings to auto-rescue this document"
                             >
-                              ⚠️ &lt;85% Conf: Enter Gemini Key in Settings ⚙️ to Auto-Rescue
+                              {sheet.name} ({sheet.row_count})
                             </button>
-                          )}
-
-                          {currentPage?.engine && !viewAllImages && (
-                            <span style={{
-                              fontSize: '0.72rem',
-                              fontWeight: 600,
-                              padding: '2px 8px',
-                              borderRadius: '4px',
-                              backgroundColor: currentPage.engine.includes('Gemini') ? 'rgba(216, 180, 254, 0.2)' : 'rgba(56, 189, 248, 0.1)',
-                              color: currentPage.engine.includes('Gemini') ? '#d8b4fe' : '#38bdf8',
-                              border: `1px solid ${currentPage.engine.includes('Gemini') ? 'rgba(216, 180, 254, 0.3)' : 'rgba(56, 189, 248, 0.2)'}`
-                            }}>
-                              {currentPage.engine.includes('Gemini') ? '✨ ' + currentPage.engine : currentPage.engine}
-                            </span>
-                          )}
+                          ))}
                         </div>
 
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          {selectedDoc.pages.length > 1 && (
-                            <button
-                              onClick={() => setViewAllImages(!viewAllImages)}
-                              className="btn-secondary"
-                              style={{
-                                padding: '6px 12px',
-                                fontSize: '0.82rem',
-                                borderColor: viewAllImages ? 'var(--accent-blue)' : 'var(--border-color)',
-                                backgroundColor: viewAllImages ? 'rgba(56, 189, 248, 0.15)' : 'rgba(30, 41, 59, 0.5)'
-                              }}
-                            >
-                              {viewAllImages ? 'View Page-by-Page' : 'View Full Combined Epoch (All 20 Images)'}
-                            </button>
-                          )}
-                          <button
-                            onClick={() => copyToClipboard(viewAllImages ? selectedDoc.pages.map(p => p.text).join('\n\n') : (currentPage?.text || ''))}
-                            className="btn-secondary"
-                            style={{ padding: '6px 12px', fontSize: '0.82rem' }}
-                          >
-                            {copiedText ? <Check size={14} color="#34d399" /> : <Copy size={14} />}
-                            {copiedText ? 'Copied!' : (viewAllImages ? 'Copy Entire Epoch' : 'Copy Text')}
+                        <button onClick={downloadCurrentSheetCsv} className="btn-secondary" style={{ padding: '5px 10px', fontSize: '0.78rem' }}>
+                          <Download size={13} /> CSV
+                        </button>
+                      </div>
+
+                      <div style={{ marginBottom: '10px', position: 'relative' }}>
+                        <Search size={14} color="#64748b" style={{ position: 'absolute', left: '11px', top: '9px' }} />
+                        <input
+                          type="text"
+                          className="glass-input"
+                          placeholder={`Filter ${currentSheet?.row_count || 0} rows...`}
+                          value={tableSearch}
+                          onChange={(e) => {
+                            setTableSearch(e.target.value);
+                            setTablePage(0);
+                          }}
+                          style={{ width: '100%', padding: '7px 12px 7px 32px', fontSize: '0.82rem' }}
+                        />
+                      </div>
+
+                      <div className="glass-subcard" style={{ maxHeight: '400px', overflow: 'auto' }}>
+                        <table className="custom-table">
+                          <thead>
+                            <tr>
+                              {currentSheet?.columns?.map((col, cIdx) => (
+                                <th key={cIdx}>{col}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {paginatedRows.length > 0 ? (
+                              paginatedRows.map((row, rIdx) => (
+                                <tr key={rIdx}>
+                                  {currentSheet.columns.map((col, cIdx) => (
+                                    <td key={cIdx}>{String(row[col] ?? '')}</td>
+                                  ))}
+                                </tr>
+                              ))
+                            ) : (
+                              <tr>
+                                <td colSpan={currentSheet?.columns?.length || 1} style={{ textAlign: 'center', padding: '20px', color: '#64748b' }}>
+                                  No matching rows.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
+                        <span style={{ fontSize: '0.76rem', color: '#64748b' }}>
+                          {paginatedRows.length} of {filteredRows.length} rows (Page {tablePage + 1}/{Math.max(1, totalPages)})
+                        </span>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <button onClick={() => setTablePage((p) => Math.max(0, p - 1))} disabled={tablePage === 0} className="btn-secondary" style={{ padding: '4px 9px' }}>
+                            <ChevronLeft size={14} />
+                          </button>
+                          <button onClick={() => setTablePage((p) => Math.min(totalPages - 1, p + 1))} disabled={tablePage >= totalPages - 1} className="btn-secondary" style={{ padding: '4px 9px' }}>
+                            <ChevronRight size={14} />
                           </button>
                         </div>
                       </div>
-
-                      {/* Text content card */}
-                      <div style={{
-                        backgroundColor: '#070d19',
-                        border: '1px solid var(--border-color)',
-                        borderRadius: '10px',
-                        padding: '18px',
-                        fontFamily: 'var(--font-mono)',
-                        fontSize: '0.88rem',
-                        lineHeight: 1.6,
-                        color: '#f8fafc',
-                        maxHeight: '480px',
-                        overflowY: 'auto',
-                        whiteSpace: 'pre-wrap'
-                      }}>
-                        {viewAllImages
-                          ? selectedDoc.pages.map(p => p.text).join('\n\n')
-                          : (currentPage?.text || '(No text extracted from this page)')}
-                      </div>
-
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                        <span>
-                          {currentPage?.text?.length || 0} characters · {(currentPage?.text || '').split(/\s+/).filter(Boolean).length} words
-                        </span>
-                        <span>
-                          Preprocessing: Deskewed & Downscaled (max 1600px)
-                        </span>
-                      </div>
                     </div>
                   ) : (
-                    <div style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>
-                      No pages extracted from this document.
+                    <div>
+                      {selectedDoc.pages && selectedDoc.pages.length > 0 ? (
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#334155' }}>
+                                {selectedDoc.filename.startsWith('images_epoch') ? `Img ${selectedPageIndex + 1}/${selectedDoc.pages.length}` : `Page ${selectedPageIndex + 1}/${selectedDoc.pages.length}`}
+                              </span>
+
+                              <div style={{ display: 'flex', gap: '4px' }}>
+                                <button
+                                  onClick={() => { setViewAllImages(false); setSelectedPageIndex((p) => Math.max(0, p - 1)); }}
+                                  disabled={selectedPageIndex === 0 || viewAllImages}
+                                  className="btn-secondary"
+                                  style={{ padding: '4px 7px' }}
+                                >
+                                  <ChevronLeft size={13} />
+                                </button>
+                                <button
+                                  onClick={() => { setViewAllImages(false); setSelectedPageIndex((p) => Math.min(selectedDoc.pages.length - 1, p + 1)); }}
+                                  disabled={selectedPageIndex >= selectedDoc.pages.length - 1 || viewAllImages}
+                                  className="btn-secondary"
+                                  style={{ padding: '4px 7px' }}
+                                >
+                                  <ChevronRight size={13} />
+                                </button>
+                              </div>
+
+                              {currentPage?.confidence && !viewAllImages && (
+                                <span className="badge" style={{ fontSize: '0.72rem' }}>
+                                  {(currentPage.confidence * 100).toFixed(0)}% conf
+                                </span>
+                              )}
+
+                              {currentPage?.engine && !viewAllImages && (
+                                <span className={`badge ${currentPage.engine.includes('Gemini') ? 'badge-info' : ''}`} style={{ fontSize: '0.7rem', color: currentPage.engine.includes('Gemini') ? '#6d28d9' : '#0369a1' }}>
+                                  {currentPage.engine}
+                                </span>
+                              )}
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                              {!viewAllImages && currentPage && (
+                                <button
+                                  onClick={() => handleReextractWithGemini('page')}
+                                  disabled={Boolean(reextractingScope)}
+                                  className="btn-secondary"
+                                  style={{ padding: '5px 10px', fontSize: '0.76rem', color: '#6d28d9', borderColor: 'rgba(124, 58, 237, 0.28)' }}
+                                >
+                                  {reextractingScope === 'page' ? <RefreshCw size={13} className="spin" /> : <Sparkles size={13} color="#7c3aed" />}
+                                  {reextractingScope === 'page' ? 'Re-OCR...' : 'Re-OCR Page (Gemini)'}
+                                </button>
+                              )}
+                              <button
+                                onClick={() => handleReextractWithGemini('doc')}
+                                disabled={Boolean(reextractingScope)}
+                                className="btn-secondary"
+                                style={{ padding: '5px 10px', fontSize: '0.76rem', color: '#0369a1', borderColor: 'rgba(2, 132, 199, 0.28)' }}
+                              >
+                                {reextractingScope === 'doc' ? <RefreshCw size={13} className="spin" /> : <Sparkles size={13} color="#0284c7" />}
+                                {reextractingScope === 'doc' ? 'Re-OCR Doc...' : 'Re-OCR Doc (Gemini)'}
+                              </button>
+                              {selectedDoc.pages.length > 1 && (
+                                <button onClick={() => setViewAllImages(!viewAllImages)} className="btn-secondary" style={{ padding: '5px 10px', fontSize: '0.76rem' }}>
+                                  {viewAllImages ? 'Page View' : 'Combined'}
+                                </button>
+                              )}
+                              <button
+                                onClick={() => copyToClipboard(viewAllImages ? selectedDoc.pages.map(p => p.text).join('\n\n') : (currentPage?.text || ''))}
+                                className="btn-secondary"
+                                style={{ padding: '5px 10px', fontSize: '0.76rem' }}
+                              >
+                                {copiedText ? <Check size={13} color="#059669" /> : <Copy size={13} />}
+                                {copiedText ? 'Copied' : 'Copy'}
+                              </button>
+                            </div>
+                          </div>
+
+                          {reextractError && (
+                            <div style={{ padding: '8px 12px', borderRadius: '8px', background: 'rgba(244, 63, 94, 0.1)', border: '1px solid rgba(244, 63, 94, 0.3)', color: '#9f1239', fontSize: '0.78rem', marginBottom: '10px' }}>
+                              {reextractError}
+                            </div>
+                          )}
+
+                          <div style={{
+                            backgroundColor: 'rgba(255, 255, 255, 0.65)',
+                            backdropFilter: 'blur(16px)',
+                            border: '1px solid rgba(255, 255, 255, 0.9)',
+                            borderRadius: '10px',
+                            padding: '14px 16px',
+                            fontSize: '0.88rem',
+                            lineHeight: 1.6,
+                            color: '#0f172a',
+                            maxHeight: '420px',
+                            overflowY: 'auto',
+                            whiteSpace: 'pre-wrap'
+                          }}>
+                            {viewAllImages
+                              ? selectedDoc.pages.map(p => p.text).join('\n\n')
+                              : (currentPage?.text || '(No text extracted)')}
+                          </div>
+
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', fontSize: '0.72rem', color: '#64748b' }}>
+                            <span>{currentPage?.text?.length || 0} chars · {(currentPage?.text || '').split(/\s+/).filter(Boolean).length} words</span>
+                            <span>200 DPI Raster + Max 1600px</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ textAlign: 'center', padding: '24px', color: '#64748b', fontSize: '0.84rem' }}>
+                          No pages extracted.
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
               )}
             </div>
           )}
-          </div>
-          )}
 
           {/* VIEW 2: TASK 3 INVOICE INTELLIGENCE & DATA VALIDATION AUDIT */}
           {activeResultsTab === 'invoices' && (
             <div>
-              {/* Progress Bar & Gemini Request Status Dashboard */}
               {isExtractingInvoices && (
-                <div className="glass-panel" style={{
-                  padding: '24px 28px',
-                  background: 'rgba(30, 27, 75, 0.45)',
-                  border: '1px solid rgba(168, 85, 247, 0.45)',
-                  borderRadius: '14px',
-                  marginBottom: '24px',
-                  boxShadow: '0 8px 32px rgba(147, 51, 234, 0.2)'
-                }}>
-                  {/* Top Header: Title & Request Status Badge */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <div style={{
-                        padding: '10px',
-                        borderRadius: '10px',
-                        background: 'rgba(168, 85, 247, 0.2)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                      }}>
-                        <Sparkles size={22} color="#c084fc" className="spin" />
-                      </div>
+                <div className="glass-subcard" style={{ padding: '18px 20px', marginBottom: '16px', borderColor: 'rgba(124, 58, 237, 0.3)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <Sparkles size={18} color="#7c3aed" className="spin" />
                       <div>
-                        <h4 style={{ fontSize: '1.08rem', fontWeight: 800, color: '#f3e8ff' }}>
-                          Gemini AI Invoice Extraction &amp; Task 3 Audit
+                        <h4 style={{ fontSize: '0.96rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>
+                          Gemini Invoice Audit
                         </h4>
-                        <span style={{ fontSize: '0.8rem', color: '#d8b4fe' }}>
-                          Target Model: <strong style={{ color: '#fff' }}>{geminiInvoiceStatus?.model || 'gemini-3-flash-preview'}</strong> · Token Paced
+                        <span style={{ fontSize: '0.76rem', color: '#475569' }}>
+                          {geminiInvoiceStatus?.model || 'gemini-3-flash-preview'}
                         </span>
                       </div>
                     </div>
-
-                    {/* Gemini Live Request Status Pill */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Gemini Request Status:</span>
-                      {geminiInvoiceStatus?.state === 'REQUESTING' && (
-                        <span className="badge" style={{ backgroundColor: 'rgba(251, 191, 36, 0.2)', color: '#fbbf24', border: '1px solid rgba(251, 191, 36, 0.4)' }}>
-                          <span className="pulse-dot" style={{ backgroundColor: '#fbbf24', marginRight: '4px' }} />
-                          REQUESTING GEMINI API
-                        </span>
-                      )}
-                      {geminiInvoiceStatus?.state === 'PARSING' && (
-                        <span className="badge" style={{ backgroundColor: 'rgba(56, 189, 248, 0.2)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.4)' }}>
-                          <RefreshCw size={12} className="spin" />
-                          PARSING JSON SCHEMA
-                        </span>
-                      )}
-                      {geminiInvoiceStatus?.state === 'PACING' && (
-                        <span className="badge" style={{ backgroundColor: 'rgba(192, 132, 252, 0.25)', color: '#e9d5ff', border: '1px solid rgba(192, 132, 252, 0.45)' }}>
-                          ⏳ RATE PACING (2.5s SAFE BUFFER)
-                        </span>
-                      )}
-                      {geminiInvoiceStatus?.state === 'VALIDATING' && (
-                        <span className="badge" style={{ backgroundColor: 'rgba(52, 211, 153, 0.2)', color: '#34d399', border: '1px solid rgba(52, 211, 153, 0.4)' }}>
-                          🛡️ TASK 3 VALIDATION RULES
-                        </span>
-                      )}
-                      {geminiInvoiceStatus?.state === 'EXCEL' && (
-                        <span className="badge" style={{ backgroundColor: 'rgba(16, 185, 129, 0.2)', color: '#6ee7b7', border: '1px solid rgba(16, 185, 129, 0.4)' }}>
-                          📊 BUILDING EXCEL WORKBOOK
-                        </span>
-                      )}
-                      {geminiInvoiceStatus?.state === 'COMPLETED' && (
-                        <span className="badge badge-success">
-                          <CheckCircle2 size={12} />
-                          COMPLETED (100%)
-                        </span>
-                      )}
-                      {(!geminiInvoiceStatus?.state || geminiInvoiceStatus?.state === 'CONNECTING') && (
-                        <span className="badge" style={{ backgroundColor: 'rgba(148, 163, 184, 0.2)', color: '#94a3b8' }}>
-                          INITIALIZING PIPELINE...
-                        </span>
-                      )}
-                    </div>
+                    <span className="badge badge-info" style={{ fontSize: '0.72rem' }}>
+                      {geminiInvoiceStatus?.state || 'CONNECTING'} · {invoiceProgress}%
+                    </span>
                   </div>
 
-                  {/* Progress Bar with glowing indicator */}
-                  <div style={{ marginBottom: '12px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', fontSize: '0.84rem' }}>
-                      <span style={{ color: '#e2e8f0', fontWeight: 600 }}>
-                        {geminiInvoiceStatus?.message || 'Processing invoice batches...'}
-                      </span>
-                      <span style={{ color: '#38bdf8', fontWeight: 800, fontFamily: 'var(--font-mono)', fontSize: '0.92rem' }}>
-                        {invoiceProgress}%
-                      </span>
-                    </div>
-
-                    <div style={{
-                      width: '100%',
-                      height: '10px',
-                      backgroundColor: 'rgba(15, 23, 42, 0.8)',
-                      borderRadius: '999px',
-                      overflow: 'hidden',
-                      padding: '2px',
-                      border: '1px solid rgba(168, 85, 247, 0.3)'
-                    }}>
-                      <div
-                        style={{
-                          width: `${invoiceProgress}%`,
-                          height: '100%',
-                          background: 'linear-gradient(90deg, #9333ea 0%, #38bdf8 50%, #34d399 100%)',
-                          borderRadius: '999px',
-                          boxShadow: '0 0 14px rgba(56, 189, 248, 0.5)',
-                          transition: 'width 0.4s ease'
-                        }}
-                      />
-                    </div>
+                  <div style={{ fontSize: '0.8rem', color: '#334155', fontWeight: 600, marginBottom: '6px' }}>
+                    {geminiInvoiceStatus?.message || 'Processing batches...'}
                   </div>
 
-                  {/* Live Telemetry Info Bar */}
-                  <div style={{
-                    display: 'flex',
-                    gap: '16px',
-                    fontSize: '0.75rem',
-                    color: '#cbd5e1',
-                    marginTop: '12px',
-                    paddingTop: '10px',
-                    borderTop: '1px solid rgba(168, 85, 247, 0.2)',
-                    flexWrap: 'wrap'
-                  }}>
-                    <span>API Tier: <strong style={{ color: '#38bdf8' }}>Google AI Studio Free Tier (15 RPM Guardrails)</strong></span>
-                    <span>Model: <strong style={{ color: '#c084fc' }}>{geminiInvoiceStatus?.model || 'gemini-3-flash-preview'}</strong></span>
-                    {geminiInvoiceStatus?.batch && (
-                      <span>Active Batch: <strong style={{ color: '#34d399' }}>{geminiInvoiceStatus.batch} of {geminiInvoiceStatus.total_batches || 1}</strong></span>
-                    )}
-                    <span>Anti-Hallucination: <strong style={{ color: '#fbbf24' }}>Strict null enforcement enabled</strong></span>
+                  <div style={{ width: '100%', height: '6px', backgroundColor: 'rgba(15, 23, 42, 0.08)', borderRadius: '999px', overflow: 'hidden' }}>
+                    <div style={{ width: `${invoiceProgress}%`, height: '100%', background: 'linear-gradient(90deg, #7c3aed 0%, #0284c7 100%)', transition: 'width 0.35s ease' }} />
                   </div>
                 </div>
               )}
 
-              {/* Error Banner */}
               {invoiceError && (
-                <div style={{ padding: '16px 20px', background: 'rgba(244, 63, 94, 0.12)', border: '1px solid rgba(244, 63, 94, 0.35)', borderRadius: '12px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <AlertTriangle size={20} color="#f43f5e" />
-                    <div>
-                      <h4 style={{ fontSize: '0.92rem', fontWeight: 700, color: '#fecdd3' }}>Invoice Extraction Notice</h4>
-                      <p style={{ fontSize: '0.82rem', color: '#fda4af', margin: '2px 0 0' }}>{invoiceError}</p>
-                    </div>
+                <div style={{ padding: '12px 16px', background: 'rgba(244, 63, 94, 0.1)', border: '1px solid rgba(244, 63, 94, 0.3)', borderRadius: '10px', marginBottom: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <AlertTriangle size={16} color="#be123c" />
+                    <span style={{ fontSize: '0.82rem', color: '#9f1239', fontWeight: 600 }}>{invoiceError}</span>
                   </div>
-                  <button onClick={handleExtractInvoices} className="btn-secondary" style={{ padding: '6px 14px', fontSize: '0.82rem' }}>
-                    <RefreshCw size={14} /> Retry
+                  <button onClick={handleExtractInvoices} className="btn-secondary" style={{ padding: '5px 12px', fontSize: '0.76rem' }}>
+                    <RefreshCw size={13} /> Retry
                   </button>
                 </div>
               )}
 
-              {/* If no results and not extracting, show Start Card */}
               {!invoiceResults && !isExtractingInvoices && (
-                <div style={{
-                  padding: '36px',
-                  textAlign: 'center',
-                  background: 'rgba(99, 102, 241, 0.07)',
-                  borderRadius: '14px',
-                  border: '1px dashed rgba(168, 85, 247, 0.35)',
-                  marginBottom: '20px'
-                }}>
-                  <div style={{ display: 'inline-flex', padding: '14px', borderRadius: '50%', background: 'rgba(168, 85, 247, 0.15)', marginBottom: '16px' }}>
-                    <FileSpreadsheet size={36} color="#c084fc" />
-                  </div>
-                  <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#f8fafc', marginBottom: '8px' }}>
-                    Task 3: Structured Invoice Extraction & Deterministic Data Validation
+                <div className="glass-subcard" style={{ padding: '26px 20px', textAlign: 'center', borderStyle: 'dashed' }}>
+                  <FileSpreadsheet size={30} color="#7c3aed" style={{ margin: '0 auto 10px auto' }} />
+                  <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0f172a', marginBottom: '4px' }}>
+                    Invoice Audit &amp; Math Validation
                   </h3>
-                  <p style={{ fontSize: '0.88rem', color: '#94a3b8', maxWidth: '640px', margin: '0 auto 20px', lineHeight: 1.6 }}>
-                    Automatically extract invoice number, invoice date, supplier name, customer name, subtotal, tax, total,
-                    currency, and line items without inventing values. Validates missing fields, incorrect numeric values,
-                    arithmetic discrepancies (subtotal + tax vs total, line items sum vs subtotal, unit price × qty vs amount),
-                    and flags duplicate invoices across files for manual review. Generates a multi-sheet color-coded Excel (.xlsx) workbook.
+                  <p style={{ fontSize: '0.82rem', color: '#475569', maxWidth: '480px', margin: '0 auto 14px', lineHeight: 1.5 }}>
+                    Extracts vendor, totals, line items, flags math mismatches, and builds Excel.
                   </p>
-                  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
-                    <span style={{ fontSize: '0.86rem', color: '#cbd5e1' }}>Extraction Scope:</span>
-                    <select
-                      value={invoiceScope}
-                      onChange={(e) => setInvoiceScope(e.target.value)}
-                      disabled={isExtractingInvoices}
-                      style={{
-                        background: '#1e293b',
-                        color: '#f8fafc',
-                        border: '1px solid rgba(168, 85, 247, 0.5)',
-                        borderRadius: '8px',
-                        padding: '6px 14px',
-                        fontSize: '0.86rem',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      <option value="all">All Invoices (Full Document)</option>
-                      <option value="25">First 25 Invoices (Fast ~25s)</option>
-                      <option value="50">First 50 Invoices</option>
-                      <option value="100">First 100 Invoices</option>
-                    </select>
-                  </div>
-
-                  <button
-                    onClick={handleExtractInvoices}
-                    className="btn-primary"
-                    style={{
-                      background: 'linear-gradient(135deg, #a855f7 0%, #6366f1 100%)',
-                      boxShadow: '0 4px 18px rgba(168, 85, 247, 0.4)',
-                      padding: '12px 28px',
-                      fontSize: '0.95rem'
-                    }}
-                  >
-                    <Sparkles size={17} />
-                    Run Invoice Extraction & Task 3 Validation
+                  <button onClick={handleExtractInvoices} className="btn-primary" style={{ padding: '9px 20px', fontSize: '0.84rem' }}>
+                    <Sparkles size={15} />
+                    Run Invoice Audit
                   </button>
                 </div>
               )}
 
-              {/* Results View */}
               {invoiceResults && (
                 <div>
-                  {/* Supabase Save Status Alert */}
                   {supabaseSaveResult && (
                     <div style={{
-                      padding: '12px 18px',
+                      padding: '10px 14px',
                       borderRadius: '10px',
-                      backgroundColor: supabaseSaveResult.type === 'success' ? 'rgba(52, 211, 153, 0.12)' : 'rgba(251, 191, 36, 0.12)',
-                      border: `1px solid ${supabaseSaveResult.type === 'success' ? 'rgba(52, 211, 153, 0.3)' : 'rgba(251, 191, 36, 0.3)'}`,
-                      marginBottom: '18px',
+                      backgroundColor: supabaseSaveResult.type === 'success' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                      border: `1px solid ${supabaseSaveResult.type === 'success' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
+                      marginBottom: '12px',
                       display: 'flex',
                       justifyContent: 'space-between',
                       alignItems: 'center',
-                      fontSize: '0.84rem'
+                      fontSize: '0.8rem'
                     }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <Database size={16} color={supabaseSaveResult.type === 'success' ? '#34d399' : '#fbbf24'} />
-                        <span style={{ color: supabaseSaveResult.type === 'success' ? '#a7f3d0' : '#fde68a', fontWeight: 600 }}>
-                          {supabaseSaveResult.message}
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                        {supabaseSaveResult.type !== 'success' && (
-                          <>
-                            <a
-                              href="https://supabase.com/dashboard/project/czkvtyvcoovhecxmjwjh/sql/new"
-                              target="_blank"
-                              rel="noreferrer"
-                              className="btn-primary"
-                              style={{ padding: '4px 10px', fontSize: '0.75rem', textDecoration: 'none', background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)' }}
-                            >
-                              Open SQL Editor ↗
-                            </a>
-                            <button
-                              onClick={handleCopySql}
-                              className="btn-secondary"
-                              style={{ padding: '4px 10px', fontSize: '0.75rem' }}
-                            >
-                              {copiedSql ? 'Copied!' : 'Copy SQL Schema'}
-                            </button>
-                          </>
-                        )}
-                        <button
-                          onClick={() => setSupabaseSaveResult(null)}
-                          style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.8rem' }}
-                        >
-                          ✕
-                        </button>
-                      </div>
+                      <span style={{ color: supabaseSaveResult.type === 'success' ? '#065f46' : '#92400e', fontWeight: 600 }}>
+                        {supabaseSaveResult.message}
+                      </span>
+                      <button onClick={() => setSupabaseSaveResult(null)} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }}>✕</button>
                     </div>
                   )}
 
-                  {/* Metric Bar */}
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                    gap: '16px',
-                    marginBottom: '20px'
-                  }}>
-                    <div className="glass-panel" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '14px' }}>
-                      <div style={{ padding: '10px', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.08)' }}>
-                        <FileSpreadsheet size={22} color="#ffffff" />
-                      </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', marginBottom: '14px' }}>
+                    <div className="glass-subcard" style={{ padding: '12px 14px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <FileSpreadsheet size={20} color="#0284c7" />
                       <div>
-                        <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Invoices</span>
-                        <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#f8fafc' }}>{invoiceResults.total_invoices}</div>
+                        <span style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>Total</span>
+                        <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0f172a' }}>{invoiceResults.total_invoices}</div>
                       </div>
                     </div>
-
-                    <div className="glass-panel" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '14px' }}>
-                      <div style={{ padding: '10px', borderRadius: '10px', background: 'rgba(52, 211, 153, 0.15)' }}>
-                        <CheckCircle2 size={22} color="#34d399" />
-                      </div>
+                    <div className="glass-subcard" style={{ padding: '12px 14px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <CheckCircle2 size={20} color="#059669" />
                       <div>
-                        <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Clean Invoices</span>
-                        <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#34d399' }}>{invoiceResults.clean_count}</div>
+                        <span style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>Clean</span>
+                        <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#059669' }}>{invoiceResults.clean_count}</div>
                       </div>
                     </div>
-
-                    <div className="glass-panel" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '14px' }}>
-                      <div style={{ padding: '10px', borderRadius: '10px', background: 'rgba(244, 63, 94, 0.15)' }}>
-                        <AlertTriangle size={22} color="#f43f5e" />
-                      </div>
+                    <div className="glass-subcard" style={{ padding: '12px 14px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <AlertTriangle size={20} color="#e11d48" />
                       <div>
-                        <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Flagged For Review</span>
-                        <div style={{ fontSize: '1.4rem', fontWeight: 800, color: invoiceResults.review_count > 0 ? '#f43f5e' : '#94a3b8' }}>
-                          {invoiceResults.review_count}
-                        </div>
+                        <span style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>Flagged</span>
+                        <div style={{ fontSize: '1.25rem', fontWeight: 800, color: invoiceResults.review_count > 0 ? '#e11d48' : '#64748b' }}>{invoiceResults.review_count}</div>
                       </div>
                     </div>
                   </div>
 
-                  {/* Master-Detail Layout */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.8fr', gap: '20px', alignItems: 'start' }}>
-                    {/* LEFT: Invoice List */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1.15fr 1.85fr', gap: '14px', alignItems: 'start' }}>
                     {(() => {
                       const allInvs = invoiceResults.invoices || [];
                       const filteredInvs = allInvs.map((inv, originalIdx) => ({ inv, originalIdx })).filter(({ inv }) => {
@@ -3421,42 +2974,26 @@ export default function App() {
                       const displayedInvs = filteredInvs.slice(safePage * pageSize, (safePage + 1) * pageSize);
 
                       return (
-                        <div className="glass-panel" style={{ padding: '16px', maxHeight: '720px', display: 'flex', flexDirection: 'column' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                            <h3 style={{ fontSize: '0.98rem', fontWeight: 700 }}>Invoices ({allInvs.length})</h3>
-                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Click to inspect</span>
+                        <div className="glass-subcard" style={{ padding: '12px', maxHeight: '620px', display: 'flex', flexDirection: 'column' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                            <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#0f172a' }}>Invoices ({allInvs.length})</h3>
                           </div>
 
-                          {/* Quick Search */}
-                          <div style={{ position: 'relative', marginBottom: '12px' }}>
-                            <Search size={14} style={{ position: 'absolute', left: '10px', top: '10px', color: 'var(--text-muted)' }} />
+                          <div style={{ position: 'relative', marginBottom: '10px' }}>
+                            <Search size={13} style={{ position: 'absolute', left: '10px', top: '9px', color: '#64748b' }} />
                             <input
                               type="text"
-                              placeholder="Search #, supplier, date..."
+                              className="glass-input"
+                              placeholder="Search #, vendor, date..."
                               value={invoiceSearch}
-                              onChange={(e) => {
-                                setInvoiceSearch(e.target.value);
-                                setInvoicePage(0);
-                              }}
-                              style={{
-                                width: '100%',
-                                padding: '7px 10px 7px 32px',
-                                fontSize: '0.82rem',
-                                borderRadius: '8px',
-                                border: '1px solid var(--border-color)',
-                                backgroundColor: 'rgba(15, 23, 42, 0.6)',
-                                color: '#f8fafc',
-                                outline: 'none'
-                              }}
+                              onChange={(e) => { setInvoiceSearch(e.target.value); setInvoicePage(0); }}
+                              style={{ width: '100%', padding: '6px 10px 6px 30px', fontSize: '0.8rem' }}
                             />
                           </div>
 
-                          {/* Scrollable Items */}
-                          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', paddingRight: '4px' }}>
+                          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px', paddingRight: '2px' }}>
                             {displayedInvs.length === 0 ? (
-                              <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                                No invoices match your search.
-                              </div>
+                              <div style={{ textAlign: 'center', padding: '20px 0', color: '#64748b', fontSize: '0.82rem' }}>No matches.</div>
                             ) : (
                               displayedInvs.map(({ inv, originalIdx }) => {
                                 const isSelected = selectedInvoiceIdx === originalIdx;
@@ -3466,33 +3003,30 @@ export default function App() {
                                     key={originalIdx}
                                     onClick={() => setSelectedInvoiceIdx(originalIdx)}
                                     style={{
-                                      padding: '12px 14px',
-                                      borderRadius: '10px',
+                                      padding: '10px 12px',
+                                      borderRadius: '9px',
                                       border: '1px solid',
-                                      borderColor: isSelected ? 'var(--accent-purple)' : 'var(--border-color)',
-                                      backgroundColor: isSelected ? 'rgba(168, 85, 247, 0.12)' : 'rgba(30, 41, 59, 0.4)',
-                                      cursor: 'pointer',
-                                      transition: 'all 0.15s ease'
+                                      borderColor: isSelected ? '#7c3aed' : 'rgba(15, 23, 42, 0.08)',
+                                      backgroundColor: isSelected ? 'rgba(255, 255, 255, 0.90)' : 'rgba(255, 255, 255, 0.45)',
+                                      cursor: 'pointer'
                                     }}
                                   >
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                                      <span style={{ fontWeight: 700, fontSize: '0.88rem', color: '#f8fafc' }}>
-                                        {inv.invoice_number ? `#${inv.invoice_number}` : '(No Invoice #)'}
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                                      <span style={{ fontWeight: 700, fontSize: '0.84rem', color: '#0f172a' }}>
+                                        {inv.invoice_number ? `#${inv.invoice_number}` : '(No #)'}
                                       </span>
-                                      <span className={`badge ${isFlagged ? 'badge-error' : 'badge-success'}`} style={{ fontSize: '0.68rem', padding: '2px 8px' }}>
+                                      <span className={`badge ${isFlagged ? 'badge-error' : 'badge-success'}`} style={{ fontSize: '0.66rem', padding: '1px 7px' }}>
                                         {isFlagged ? `Flagged (${inv.validation_issues?.length || 1})` : 'Clean'}
                                       </span>
                                     </div>
-
-                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                      {inv.supplier_name || 'Unknown Supplier'}
+                                    <div style={{ fontSize: '0.76rem', color: '#475569', marginBottom: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      {inv.supplier_name || 'Unknown Vendor'}
                                     </div>
-
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                                      <span>{inv.invoice_date || 'No Date'}</span>
-                                      <span style={{ fontWeight: 700, color: '#f8fafc' }}>
-                                        {inv.total != null ? `${inv.currency || ''} ${Number(inv.total).toFixed(2)}` : 'Total: null'}
-                                      </span>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: '#64748b' }}>
+                                      <span>{inv.invoice_date || '—'}</span>
+                                      <strong style={{ color: '#0f172a' }}>
+                                        {inv.total != null ? `${inv.currency || ''} ${Number(inv.total).toFixed(2)}` : '—'}
+                                      </strong>
                                     </div>
                                   </div>
                                 );
@@ -3500,91 +3034,50 @@ export default function App() {
                             )}
                           </div>
 
-                          {/* Pagination Footer */}
                           {totalPages > 1 && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px', paddingTop: '10px', borderTop: '1px solid var(--border-color)', fontSize: '0.78rem' }}>
-                              <button
-                                className="secondary-button"
-                                disabled={safePage === 0}
-                                onClick={() => setInvoicePage((p) => Math.max(0, p - 1))}
-                                style={{ padding: '4px 10px', fontSize: '0.75rem' }}
-                              >
-                                &larr; Prev
-                              </button>
-                              <span style={{ color: 'var(--text-muted)' }}>
-                                Page {safePage + 1} of {totalPages} ({filteredInvs.length})
-                              </span>
-                              <button
-                                className="secondary-button"
-                                disabled={safePage >= totalPages - 1}
-                                onClick={() => setInvoicePage((p) => Math.min(totalPages - 1, p + 1))}
-                                style={{ padding: '4px 10px', fontSize: '0.75rem' }}
-                              >
-                                Next &rarr;
-                              </button>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', paddingTop: '8px', borderTop: '1px solid rgba(15, 23, 42, 0.08)', fontSize: '0.75rem' }}>
+                              <button className="btn-secondary" disabled={safePage === 0} onClick={() => setInvoicePage((p) => Math.max(0, p - 1))} style={{ padding: '4px 9px', fontSize: '0.72rem' }}>Prev</button>
+                              <span style={{ color: '#64748b' }}>{safePage + 1} / {totalPages}</span>
+                              <button className="btn-secondary" disabled={safePage >= totalPages - 1} onClick={() => setInvoicePage((p) => Math.min(totalPages - 1, p + 1))} style={{ padding: '4px 9px', fontSize: '0.72rem' }}>Next</button>
                             </div>
                           )}
                         </div>
                       );
                     })()}
 
-                    {/* RIGHT: Selected Invoice Inspector */}
                     {invoiceResults.invoices[selectedInvoiceIdx] && (() => {
                       const currentInv = invoiceResults.invoices[selectedInvoiceIdx];
                       return (
-                        <div className="glass-panel" style={{ padding: '20px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '14px' }}>
+                        <div className="glass-subcard" style={{ padding: '16px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px', borderBottom: '1px solid rgba(15, 23, 42, 0.08)', paddingBottom: '10px' }}>
                             <div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                <h3 style={{ fontSize: '1.15rem', fontWeight: 800 }}>
-                                  {currentInv.invoice_number ? `Invoice #${currentInv.invoice_number}` : 'Unnumbered Document'}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: '#0f172a' }}>
+                                  {currentInv.invoice_number ? `Invoice #${currentInv.invoice_number}` : 'Unnumbered'}
                                 </h3>
                                 <span className={`badge ${currentInv.requires_manual_review ? 'badge-error' : 'badge-success'}`}>
-                                  {currentInv.requires_manual_review ? 'Requires Manual Review' : 'Verified Clean'}
+                                  {currentInv.requires_manual_review ? 'Review' : 'Clean'}
                                 </span>
                               </div>
-                              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
-                                Source Document: <strong>{currentInv.source_filename}</strong>
+                              <span style={{ fontSize: '0.74rem', color: '#64748b', display: 'block', marginTop: '2px' }}>
+                                {currentInv.source_filename}
                               </span>
                             </div>
 
-                            <button
-                              onClick={() => setShowRawInvoiceJson(!showRawInvoiceJson)}
-                              className="btn-secondary"
-                              style={{ padding: '5px 10px', fontSize: '0.75rem' }}
-                            >
-                              {showRawInvoiceJson ? 'Hide JSON' : 'View JSON'}
+                            <button onClick={() => setShowRawInvoiceJson(!showRawInvoiceJson)} className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.74rem' }}>
+                              {showRawInvoiceJson ? 'Hide JSON' : 'JSON'}
                             </button>
                           </div>
 
-                          {/* Validation Issues Alert Box */}
-                          {currentInv.requires_manual_review && currentInv.validation_issues && currentInv.validation_issues.length > 0 && (
-                            <div style={{
-                              padding: '14px 16px',
-                              borderRadius: '10px',
-                              backgroundColor: 'rgba(244, 63, 94, 0.1)',
-                              border: '1px solid rgba(244, 63, 94, 0.3)',
-                              marginBottom: '16px'
-                            }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', color: '#f87171', fontWeight: 700, fontSize: '0.85rem' }}>
-                                <AlertTriangle size={16} />
-                                <span>Task 3 Audit Findings ({currentInv.validation_issues.length}):</span>
+                          {currentInv.requires_manual_review && currentInv.validation_issues?.length > 0 && (
+                            <div style={{ padding: '10px 12px', borderRadius: '8px', background: 'rgba(244, 63, 94, 0.08)', border: '1px solid rgba(244, 63, 94, 0.25)', marginBottom: '12px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px', color: '#be123c', fontWeight: 700, fontSize: '0.8rem' }}>
+                                <AlertTriangle size={14} /> Audit Findings ({currentInv.validation_issues.length})
                               </div>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                 {currentInv.validation_issues.map((iss, iIdx) => (
-                                  <div key={iIdx} style={{ fontSize: '0.8rem', display: 'flex', alignItems: 'flex-start', gap: '8px', lineHeight: 1.4 }}>
-                                    <span style={{
-                                      padding: '1px 6px',
-                                      borderRadius: '4px',
-                                      fontSize: '0.7rem',
-                                      fontWeight: 700,
-                                      backgroundColor: iss.severity === 'ERROR' ? 'rgba(239, 68, 68, 0.25)' : 'rgba(245, 158, 11, 0.25)',
-                                      color: iss.severity === 'ERROR' ? '#fca5a5' : '#fde047',
-                                      flexShrink: 0
-                                    }}>
-                                      {iss.rule || iss.issue_type}
-                                    </span>
-                                    <span style={{ color: '#fecdd3' }}>{iss.message}</span>
+                                  <div key={iIdx} style={{ fontSize: '0.76rem', color: '#9f1239' }}>
+                                    <strong>{iss.rule || iss.issue_type}:</strong> {iss.message}
                                   </div>
                                 ))}
                               </div>
@@ -3592,107 +3085,58 @@ export default function App() {
                           )}
 
                           {!currentInv.requires_manual_review && (
-                            <div style={{
-                              padding: '10px 14px',
-                              borderRadius: '10px',
-                              backgroundColor: 'rgba(52, 211, 153, 0.1)',
-                              border: '1px solid rgba(52, 211, 153, 0.25)',
-                              marginBottom: '16px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '8px',
-                              fontSize: '0.82rem',
-                              color: '#34d399',
-                              fontWeight: 600
-                            }}>
-                              <CheckCircle2 size={16} />
-                              <span>All validation rules passed: Subtotal, tax, and line items balance perfectly with no missing required fields.</span>
+                            <div style={{ padding: '8px 12px', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.25)', marginBottom: '12px', fontSize: '0.78rem', color: '#065f46', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <CheckCircle2 size={14} /> Subtotal, tax, and line items balance cleanly.
                             </div>
                           )}
 
-                          {/* Primary Metadata Strip */}
-                          <div style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(2, 1fr)',
-                            gap: '12px',
-                            backgroundColor: 'rgba(15, 23, 42, 0.5)',
-                            padding: '14px',
-                            borderRadius: '10px',
-                            border: '1px solid var(--border-color)',
-                            marginBottom: '16px'
-                          }}>
+                          <div className="glass-subcard" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', padding: '10px 12px', marginBottom: '12px' }}>
                             <div>
-                              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block' }}>SUPPLIER</span>
-                              <span style={{ fontSize: '0.88rem', fontWeight: 600, color: currentInv.supplier_name ? '#f8fafc' : '#f87171' }}>
-                                {currentInv.supplier_name || 'null (Missing)'}
-                              </span>
+                              <span style={{ fontSize: '0.68rem', color: '#64748b', display: 'block', fontWeight: 700 }}>SUPPLIER</span>
+                              <span style={{ fontSize: '0.84rem', fontWeight: 600, color: currentInv.supplier_name ? '#0f172a' : '#be123c' }}>{currentInv.supplier_name || 'Missing'}</span>
                             </div>
                             <div>
-                              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block' }}>CUSTOMER</span>
-                              <span style={{ fontSize: '0.88rem', fontWeight: 600, color: currentInv.customer_name ? '#f8fafc' : 'var(--text-muted)' }}>
-                                {currentInv.customer_name || 'null'}
-                              </span>
+                              <span style={{ fontSize: '0.68rem', color: '#64748b', display: 'block', fontWeight: 700 }}>CUSTOMER</span>
+                              <span style={{ fontSize: '0.84rem', fontWeight: 600, color: '#0f172a' }}>{currentInv.customer_name || '—'}</span>
                             </div>
                             <div>
-                              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block' }}>INVOICE DATE</span>
-                              <span style={{ fontSize: '0.88rem', fontWeight: 600, color: currentInv.invoice_date ? '#f8fafc' : '#f87171' }}>
-                                {currentInv.invoice_date || 'null (Missing)'}
-                              </span>
+                              <span style={{ fontSize: '0.68rem', color: '#64748b', display: 'block', fontWeight: 700 }}>DATE</span>
+                              <span style={{ fontSize: '0.84rem', fontWeight: 600, color: currentInv.invoice_date ? '#0f172a' : '#be123c' }}>{currentInv.invoice_date || 'Missing'}</span>
                             </div>
                             <div>
-                              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block' }}>CURRENCY</span>
-                              <span style={{ fontSize: '0.88rem', fontWeight: 600, color: '#f8fafc' }}>
-                                {currentInv.currency || 'USD'}
-                              </span>
+                              <span style={{ fontSize: '0.68rem', color: '#64748b', display: 'block', fontWeight: 700 }}>CURRENCY</span>
+                              <span style={{ fontSize: '0.84rem', fontWeight: 600, color: '#0f172a' }}>{currentInv.currency || 'USD'}</span>
                             </div>
                           </div>
 
-                          {/* Financial Summary */}
-                          <div style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(3, 1fr)',
-                            gap: '10px',
-                            marginBottom: '18px'
-                          }}>
-                            <div style={{ padding: '10px 14px', borderRadius: '8px', background: 'rgba(30, 41, 59, 0.4)', border: '1px solid var(--border-color)' }}>
-                              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block' }}>SUBTOTAL</span>
-                              <span style={{ fontSize: '1rem', fontWeight: 700, color: '#f8fafc' }}>
-                                {currentInv.subtotal != null ? `${currentInv.currency || ''} ${Number(currentInv.subtotal).toFixed(2)}` : 'null'}
-                              </span>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '12px' }}>
+                            <div className="glass-subcard" style={{ padding: '8px 12px' }}>
+                              <span style={{ fontSize: '0.68rem', color: '#64748b', display: 'block', fontWeight: 700 }}>SUBTOTAL</span>
+                              <span style={{ fontSize: '0.94rem', fontWeight: 700, color: '#0f172a' }}>{currentInv.subtotal != null ? `${currentInv.currency || ''} ${Number(currentInv.subtotal).toFixed(2)}` : '—'}</span>
                             </div>
-                            <div style={{ padding: '10px 14px', borderRadius: '8px', background: 'rgba(30, 41, 59, 0.4)', border: '1px solid var(--border-color)' }}>
-                              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block' }}>TAX</span>
-                              <span style={{ fontSize: '1rem', fontWeight: 700, color: '#f8fafc' }}>
-                                {currentInv.tax != null ? `${currentInv.currency || ''} ${Number(currentInv.tax).toFixed(2)}` : 'null'}
-                              </span>
+                            <div className="glass-subcard" style={{ padding: '8px 12px' }}>
+                              <span style={{ fontSize: '0.68rem', color: '#64748b', display: 'block', fontWeight: 700 }}>TAX</span>
+                              <span style={{ fontSize: '0.94rem', fontWeight: 700, color: '#0f172a' }}>{currentInv.tax != null ? `${currentInv.currency || ''} ${Number(currentInv.tax).toFixed(2)}` : '—'}</span>
                             </div>
-                            <div style={{ padding: '10px 14px', borderRadius: '8px', background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.3)' }}>
-                              <span style={{ fontSize: '0.72rem', color: '#38bdf8', display: 'block' }}>TOTAL AMOUNT</span>
-                              <span style={{ fontSize: '1.05rem', fontWeight: 800, color: currentInv.total != null ? '#38bdf8' : '#f87171' }}>
-                                {currentInv.total != null ? `${currentInv.currency || ''} ${Number(currentInv.total).toFixed(2)}` : 'null (Missing)'}
-                              </span>
+                            <div className="glass-subcard" style={{ padding: '8px 12px', background: 'rgba(2, 132, 199, 0.08)', borderColor: 'rgba(2, 132, 199, 0.25)' }}>
+                              <span style={{ fontSize: '0.68rem', color: '#0369a1', display: 'block', fontWeight: 700 }}>TOTAL</span>
+                              <span style={{ fontSize: '0.98rem', fontWeight: 800, color: currentInv.total != null ? '#0369a1' : '#be123c' }}>{currentInv.total != null ? `${currentInv.currency || ''} ${Number(currentInv.total).toFixed(2)}` : 'Missing'}</span>
                             </div>
                           </div>
 
-                          {/* Line Items Table */}
-                          <div style={{ marginBottom: '16px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                              <h4 style={{ fontSize: '0.88rem', fontWeight: 700, color: '#f8fafc' }}>
-                                Line Items ({currentInv.line_items?.length || 0})
-                              </h4>
-                            </div>
-
+                          <div style={{ marginBottom: '10px' }}>
+                            <h4 style={{ fontSize: '0.84rem', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>Line Items ({currentInv.line_items?.length || 0})</h4>
                             {currentInv.line_items && currentInv.line_items.length > 0 ? (
-                              <div style={{ maxHeight: '240px', overflowY: 'auto', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                                <table className="custom-table" style={{ fontSize: '0.8rem' }}>
+                              <div className="glass-subcard" style={{ maxHeight: '210px', overflowY: 'auto' }}>
+                                <table className="custom-table" style={{ fontSize: '0.78rem' }}>
                                   <thead>
                                     <tr>
                                       <th>#</th>
-                                      <th>Description</th>
+                                      <th>Item</th>
                                       <th>Qty</th>
-                                      <th>Unit Price</th>
+                                      <th>Rate</th>
                                       <th>Amount</th>
-                                      <th>Math Check</th>
+                                      <th>Check</th>
                                     </tr>
                                   </thead>
                                   <tbody>
@@ -3702,17 +3146,11 @@ export default function App() {
                                       return (
                                         <tr key={lIdx}>
                                           <td>{li.item_number ?? lIdx + 1}</td>
-                                          <td style={{ fontWeight: 500 }}>{li.description || 'null'}</td>
-                                          <td>{li.quantity ?? 'null'}</td>
-                                          <td>{li.unit_price != null ? Number(li.unit_price).toFixed(2) : 'null'}</td>
-                                          <td style={{ fontWeight: 700 }}>{li.amount != null ? Number(li.amount).toFixed(2) : 'null'}</td>
-                                          <td>
-                                            {mathMatch ? (
-                                              <span style={{ color: '#34d399', fontSize: '0.75rem' }}>✅ Match</span>
-                                            ) : (
-                                              <span style={{ color: '#f43f5e', fontSize: '0.75rem', fontWeight: 700 }}>❌ Mismatch</span>
-                                            )}
-                                          </td>
+                                          <td style={{ fontWeight: 500 }}>{li.description || '—'}</td>
+                                          <td>{li.quantity ?? '—'}</td>
+                                          <td>{li.unit_price != null ? Number(li.unit_price).toFixed(2) : '—'}</td>
+                                          <td style={{ fontWeight: 700 }}>{li.amount != null ? Number(li.amount).toFixed(2) : '—'}</td>
+                                          <td>{mathMatch ? <span style={{ color: '#059669' }}>Match</span> : <span style={{ color: '#be123c', fontWeight: 700 }}>Mismatch</span>}</td>
                                         </tr>
                                       );
                                     })}
@@ -3720,24 +3158,12 @@ export default function App() {
                                 </table>
                               </div>
                             ) : (
-                              <div style={{ textAlign: 'center', padding: '16px', background: 'rgba(30, 41, 59, 0.3)', borderRadius: '8px', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
-                                No line items found or non-itemized receipt.
-                              </div>
+                              <div className="glass-subcard" style={{ textAlign: 'center', padding: '12px', color: '#64748b', fontSize: '0.78rem' }}>No line items.</div>
                             )}
                           </div>
 
-                          {/* Raw JSON Debug View */}
                           {showRawInvoiceJson && (
-                            <pre style={{
-                              backgroundColor: '#070d19',
-                              border: '1px solid var(--border-color)',
-                              borderRadius: '8px',
-                              padding: '12px',
-                              fontSize: '0.75rem',
-                              color: '#93c5fd',
-                              maxHeight: '200px',
-                              overflowY: 'auto'
-                            }}>
+                            <pre className="glass-subcard" style={{ padding: '10px', fontSize: '0.72rem', color: '#1e293b', maxHeight: '160px', overflowY: 'auto' }}>
                               {JSON.stringify(currentInv, null, 2)}
                             </pre>
                           )}
@@ -3749,15 +3175,172 @@ export default function App() {
               )}
             </div>
           )}
+
+          {/* VIEW 3: AI SUMMARY & SPECIFIC Q&A (TRANSPARENT WHITE GLASSMORPHISM) */}
+          {activeResultsTab === 'summary' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div className="glass-subcard" style={{ padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <Sparkles size={17} color="#0284c7" />
+                  <h4 style={{ fontSize: '1rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>AI Summary &amp; Q&amp;A</h4>
+                  <span className="badge badge-info" style={{ fontSize: '0.7rem' }}>1 Call / Query</span>
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  {summaryResult?.answer && (
+                    <button
+                      onClick={() => { navigator.clipboard.writeText(summaryResult.answer); setCopiedSummary(true); setTimeout(() => setCopiedSummary(false), 1800); }}
+                      className="btn-secondary"
+                      style={{ padding: '7px 12px', fontSize: '0.78rem' }}
+                    >
+                      {copiedSummary ? <Check size={14} color="#059669" /> : <Copy size={14} />}
+                      {copiedSummary ? 'Copied' : 'Copy'}
+                    </button>
+                  )}
+                  <button
+                    onClick={handleGenerateSummary}
+                    disabled={isGeneratingSummary}
+                    className="btn-primary"
+                    style={{ padding: '8px 16px', fontSize: '0.8rem' }}
+                  >
+                    {isGeneratingSummary ? <RefreshCw size={14} className="spin" /> : <Sparkles size={14} />}
+                    {isGeneratingSummary ? 'Summarizing...' : (summaryResult ? 'Regenerate' : 'Generate Summary')}
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '14px', alignItems: 'start' }}>
+                {/* Summary Card */}
+                <div className="glass-subcard" style={{ padding: '16px', minHeight: '260px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '12px' }}>
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                      <span style={{ fontSize: '0.88rem', fontWeight: 700, color: '#0f172a' }}>Summary</span>
+                      {summaryResult && (
+                        <span className="badge" style={{ fontSize: '0.7rem' }}>{summaryResult.model} · {summaryResult.latency_ms}ms</span>
+                      )}
+                    </div>
+
+                    {summaryError && (
+                      <div style={{ padding: '10px', borderRadius: '8px', background: 'rgba(244, 63, 94, 0.1)', border: '1px solid rgba(244, 63, 94, 0.28)', color: '#9f1239', fontSize: '0.82rem', marginBottom: '10px' }}>
+                        {summaryError}
+                      </div>
+                    )}
+
+                    {isGeneratingSummary ? (
+                      <div style={{ padding: '36px 14px', textAlign: 'center', color: '#475569' }}>
+                        <RefreshCw size={24} color="#0284c7" className="spin" style={{ margin: '0 auto 10px auto' }} />
+                        <p style={{ fontSize: '0.86rem', fontWeight: 600, color: '#0f172a' }}>Generating summary...</p>
+                      </div>
+                    ) : summaryResult?.answer ? (
+                      <div style={{ maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
+                        {renderFormattedAnswer(summaryResult.answer)}
+                      </div>
+                    ) : (
+                      <div style={{ padding: '28px 14px', textAlign: 'center', borderRadius: '10px', border: '1px dashed rgba(15, 23, 42, 0.16)' }}>
+                        <p style={{ fontSize: '0.84rem', color: '#475569', marginBottom: '12px' }}>
+                          Click <strong>Generate Summary</strong> for key facts, totals &amp; citations.
+                        </p>
+                        <button onClick={handleGenerateSummary} className="btn-primary" style={{ fontSize: '0.8rem', padding: '7px 14px' }}>
+                          <Sparkles size={13} /> Generate Summary
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {summaryResult?.context_meta && (
+                    <div style={{ paddingTop: '8px', borderTop: '1px solid rgba(15, 23, 42, 0.08)', display: 'flex', gap: '12px', fontSize: '0.74rem', color: '#475569', flexWrap: 'wrap' }}>
+                      <span>Pages: <strong style={{ color: '#0f172a' }}>{summaryResult.context_meta.pages_covered}</strong></span>
+                      <span>Sheets: <strong style={{ color: '#0f172a' }}>{summaryResult.context_meta.sheets_covered}</strong></span>
+                      <span>Calls: <strong style={{ color: '#059669' }}>1</strong></span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Q&A Card */}
+                <div className="glass-subcard" style={{ padding: '16px', minHeight: '260px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.88rem', fontWeight: 700, color: '#0f172a' }}>Ask a Question</span>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b' }}>1 Call / Query</span>
+                  </div>
+
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    {['Key dates, names & totals?', 'Summarize each page.', 'Any risks or missing items?'].map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        disabled={isAskingQa}
+                        onClick={() => { setQaQuestion(preset); handleAskQuestion(preset); }}
+                        className="btn-secondary"
+                        style={{ padding: '4px 10px', fontSize: '0.74rem' }}
+                      >
+                        {preset}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <input
+                      type="text"
+                      className="glass-input"
+                      value={qaQuestion}
+                      onChange={(e) => setQaQuestion(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey && qaQuestion.trim() && !isAskingQa) {
+                          e.preventDefault();
+                          handleAskQuestion();
+                        }
+                      }}
+                      placeholder="Ask about any extracted page or row..."
+                      style={{ flex: 1, padding: '8px 12px', fontSize: '0.84rem' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleAskQuestion()}
+                      disabled={isAskingQa || !qaQuestion.trim()}
+                      className="btn-primary"
+                      style={{ padding: '8px 14px', fontSize: '0.8rem', flexShrink: 0 }}
+                    >
+                      {isAskingQa ? <RefreshCw size={14} className="spin" /> : <Send size={14} />}
+                      {isAskingQa ? '...' : 'Ask'}
+                    </button>
+                  </div>
+
+                  {qaError && (
+                    <div style={{ padding: '8px 12px', borderRadius: '8px', background: 'rgba(244, 63, 94, 0.1)', color: '#9f1239', fontSize: '0.8rem' }}>
+                      {qaError}
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '360px', overflowY: 'auto' }}>
+                    {qaHistory.length === 0 && !isAskingQa ? (
+                      <div style={{ padding: '20px 12px', textAlign: 'center', borderRadius: '10px', border: '1px dashed rgba(15, 23, 42, 0.16)', color: '#64748b', fontSize: '0.8rem' }}>
+                        Ask a question above to query extracted data.
+                      </div>
+                    ) : (
+                      qaHistory.map((item) => (
+                        <div key={item.id} className="glass-panel" style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '0.84rem', fontWeight: 700, color: '#0369a1' }}>Q: {item.question}</span>
+                            <span className="badge" style={{ fontSize: '0.68rem' }}>{item.latency_ms}ms</span>
+                          </div>
+                          <div style={{ borderTop: '1px solid rgba(15, 23, 42, 0.08)', paddingTop: '8px' }}>
+                            {renderFormattedAnswer(item.answer)}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </section>
           ) : (
-            <div className="glass-panel" style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--text-muted)' }}>
-              <FileText size={42} color="rgba(56, 189, 248, 0.4)" style={{ margin: '0 auto 14px auto' }} />
-              <h4 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#f8fafc', marginBottom: '6px' }}>
-                Ready for Extraction
-              </h4>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', maxWidth: '480px', margin: '0 auto' }}>
-                Drop documents in the upload section above and click <strong>Start OCR Extraction</strong> to process documents, parse tabular rows, and run Task 3 validation audits.
+            <div className="glass-panel" style={{ padding: '28px 20px', textAlign: 'center' }}>
+              <FileText size={32} color="#0284c7" style={{ margin: '0 auto 8px auto', opacity: 0.7 }} />
+              <h4 style={{ fontSize: '1rem', fontWeight: 700, color: '#0f172a', marginBottom: '4px' }}>Ready to Extract</h4>
+              <p style={{ fontSize: '0.8rem', color: '#475569', margin: '0 auto' }}>
+                Upload PDFs, images, or spreadsheets above and click <strong>Start OCR</strong>.
               </p>
             </div>
           )}
@@ -3766,491 +3349,283 @@ export default function App() {
 
       {/* ================= MAIN TAB 2: STATUS & SECURITY MONITOR ================= */}
       {mainTab === 'status' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          {/* Status Header */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
             <div>
-              <h2 style={{ fontSize: '1.4rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <Activity size={22} color="var(--accent-blue)" />
-                System Health, Infrastructure & Security Status
+              <h2 style={{ fontSize: '1.18rem', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Activity size={19} color="#0284c7" />
+                System Status &amp; Security
               </h2>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                Real-time telemetry across FastAPI backend, GPU acceleration, Gemini AI, Supabase PostgreSQL, and enterprise security guardrails.
+              <p style={{ fontSize: '0.78rem', color: '#475569', marginTop: '2px' }}>
+                Live health across API, GPU, Gemini, DB, Redis &amp; threats.
               </p>
             </div>
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-              <button
-                onClick={() => { checkHealth(); checkSupabaseStatus(); fetchSecurityEvents(); }}
-                className="btn-secondary"
-                style={{ fontSize: '0.82rem', padding: '8px 14px' }}
-              >
-                <RefreshCw size={14} className={isLoadingSecurity ? 'spin' : ''} />
-                Refresh Status
-              </button>
-
-            </div>
+            <button onClick={() => { checkHealth(); checkSupabaseStatus(); fetchSecurityEvents(); fetchRedisTelemetry(); fetchGrafanaTelemetry(); fetchUsageTelemetry(); }} className="btn-secondary" style={{ fontSize: '0.78rem', padding: '6px 12px' }}>
+              <RefreshCw size={13} className={isLoadingSecurity ? 'spin' : ''} /> Refresh
+            </button>
           </div>
 
-          {/* 5 HEALTH & STATUS CARDS */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '16px' }}>
-            {/* 1. Backend Health */}
-            <div className="glass-panel" style={{ padding: '20px', border: '1px solid rgba(255, 255, 255, 0.12)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                  Backend Health
-                </span>
-                <Cpu size={18} color="#ffffff" />
+          {/* 7 COMPACT HEALTH CARDS */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(185px, 1fr))', gap: '10px' }}>
+            <div className="glass-panel" style={{ padding: '14px 16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>API Server</span>
+                <Cpu size={15} color="#0f172a" />
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
                 <span className={`pulse-dot ${serverStatus === 'healthy' ? 'pulse-dot-green' : 'pulse-dot-red'}`} />
-                <span style={{ fontSize: '1.1rem', fontWeight: 800, color: '#ffffff' }}>
-                  {serverStatus === 'healthy' ? 'FastAPI Online' : 'Offline'}
+                <span style={{ fontSize: '0.96rem', fontWeight: 800, color: '#0f172a' }}>{serverStatus === 'healthy' ? 'Online' : 'Offline'}</span>
+              </div>
+              <div style={{ fontSize: '0.72rem', color: '#475569' }}>Port 8008 • Active</div>
+            </div>
+
+            <div className="glass-panel" style={{ padding: '14px 16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>GPU Worker</span>
+                <Zap size={15} color="#0284c7" />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                <span className="pulse-dot" style={{ backgroundColor: gpuStatus === 'online' ? '#10b981' : '#f59e0b' }} />
+                <span style={{ fontSize: '0.96rem', fontWeight: 800, color: '#0f172a' }}>
+                  {gpuStatus === 'online' ? ((apiUrl && (apiUrl.includes('100.') || apiUrl.includes('ts.net'))) ? 'Tailscale GPU' : 'Kaggle GPU') : 'Local Standby'}
                 </span>
               </div>
-              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                Port: 8008 • Sub-15ms Latency • Dual-Route Engine • CORS Open for Dev
+              <div style={{ fontSize: '0.72rem', color: '#475569' }}>Baidu Unlimited-OCR</div>
+            </div>
+
+            <div className="glass-panel" style={{ padding: '14px 16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Gemini AI</span>
+                <Sparkles size={15} color="#7c3aed" />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                <span className="pulse-dot" style={{ backgroundColor: geminiStatus === 'valid' ? '#7c3aed' : '#94a3b8' }} />
+                <span style={{ fontSize: '0.96rem', fontWeight: 800, color: '#0f172a' }}>{geminiStatus === 'valid' ? 'Verified' : 'Standby'}</span>
+              </div>
+              <div style={{ fontSize: '0.72rem', color: '#475569' }}>Flash • &lt;85% Batch</div>
+            </div>
+
+            <div className="glass-panel" style={{ padding: '14px 16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Database</span>
+                <Database size={15} color="#059669" />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                <span className="pulse-dot" style={{ backgroundColor: supabaseStatus?.connected ? '#10b981' : '#e11d48' }} />
+                <span style={{ fontSize: '0.96rem', fontWeight: 800, color: '#0f172a' }}>{supabaseStatus?.connected ? 'Connected' : 'Offline'}</span>
+              </div>
+              <div style={{ fontSize: '0.72rem', color: '#475569' }}>Supabase PostgreSQL</div>
+            </div>
+
+            <div className="glass-panel" style={{ padding: '14px 16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>DB Auto-Sync</span>
+                <CheckCircle2 size={15} color="#0284c7" />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                <span className="pulse-dot" style={{ backgroundColor: '#0284c7' }} />
+                <span style={{ fontSize: '0.96rem', fontWeight: 800, color: '#0f172a' }}>Ready</span>
+              </div>
+              <div style={{ fontSize: '0.72rem', color: '#475569' }}>{invoiceResults?.invoices ? `${invoiceResults.invoices.length} synced` : 'Auto-commit on'}</div>
+            </div>
+
+            <div className="glass-panel" style={{ padding: '14px 16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Redis Cache</span>
+                <Layers size={15} color="#dc2626" />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                <span className={`pulse-dot ${redisTelemetry?.connected ? 'pulse-dot-green' : 'pulse-dot-red'}`} />
+                <span style={{ fontSize: '0.96rem', fontWeight: 800, color: '#0f172a' }}>
+                  {redisTelemetry ? (redisTelemetry.connected ? `Redis ${redisTelemetry.version || ''}` : 'Offline') : 'Checking...'}
+                </span>
+              </div>
+              <div style={{ fontSize: '0.72rem', color: '#475569' }}>
+                {redisTelemetry?.connected
+                  ? `${redisTelemetry.used_memory_human} • ${redisTelemetry.hit_rate_percent ?? 0}% hit`
+                  : (redisTelemetry?.host ? `${redisTelemetry.host} unreachable` : 'Awaiting status')}
               </div>
             </div>
 
-            {/* 2. GPU Status */}
-            <div className="glass-panel" style={{ padding: '20px', border: '1px solid rgba(255, 255, 255, 0.12)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                  GPU Accelerator Status
-                </span>
-                <Zap size={18} color="#ffffff" />
+            <div className="glass-panel" style={{ padding: '14px 16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Grafana</span>
+                <BarChart3 size={15} color="#ea580c" />
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                <span className="pulse-dot" style={{ backgroundColor: gpuStatus === 'online' ? '#34d399' : '#f59e0b' }} />
-                <span style={{ fontSize: '1.1rem', fontWeight: 800, color: '#ffffff' }}>
-                  {gpuStatus === 'online' ? (
-                    (apiUrl && (apiUrl.includes('100.') || apiUrl.includes('ts.net')))
-                      ? 'Kaggle GPU Active (Tailscale WireGuard)'
-                      : (apiUrl && apiUrl.includes('trycloudflare.com'))
-                      ? 'Kaggle GPU Active (Cloudflare Tunnel)'
-                      : 'Kaggle GPU Active (Remote)'
-                  ) : 'Standby / Local OCR'}
-                </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                <span className="pulse-dot" style={{ backgroundColor: grafanaTelemetry?.status === 'online' ? '#ea580c' : '#94a3b8' }} />
+                <span style={{ fontSize: '0.96rem', fontWeight: 800, color: '#0f172a' }}>/metrics Live</span>
               </div>
-              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                {gpuStatus === 'online' ? (
-                  (apiUrl && (apiUrl.includes('100.') || apiUrl.includes('ts.net')))
-                    ? '🔒 Tailscale Mesh • P2P WireGuard Encrypted • No 100s Timeout • Zero Public Exposure'
-                    : (apiUrl && apiUrl.includes('trycloudflare.com'))
-                    ? '🌐 Cloudflare Quick Tunnel • Public HTTPS Edge (100s Timeout Limit)'
-                    : 'Baidu/Unlimited-OCR Worker • 1600px cv2.INTER_AREA (90% Bandwidth Saved)'
-                ) : 'Baidu/Unlimited-OCR Worker • 1600px cv2.INTER_AREA (90% Bandwidth Saved)'}
-              </div>
-            </div>
-
-            {/* 3. Gemini AI Status */}
-            <div className="glass-panel" style={{ padding: '20px', border: '1px solid rgba(255, 255, 255, 0.12)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                  Gemini AI Status
-                </span>
-                <Sparkles size={18} color="#ffffff" />
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                <span className="pulse-dot" style={{ backgroundColor: geminiStatus === 'valid' ? '#c084fc' : '#94a3b8' }} />
-                <span style={{ fontSize: '1.1rem', fontWeight: 800, color: '#ffffff' }}>
-                  {geminiStatus === 'valid' ? 'Active & Verified' : 'Standby'}
-                </span>
-              </div>
-              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                Model: gemini-3-flash-preview • Paced at 15 RPM • Bangla & &lt;85% Fallback
-              </div>
-            </div>
-
-            {/* 4. Database Status */}
-            <div className="glass-panel" style={{ padding: '20px', border: '1px solid rgba(255, 255, 255, 0.12)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                  Database Status
-                </span>
-                <Database size={18} color="#ffffff" />
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                <span className="pulse-dot" style={{ backgroundColor: supabaseStatus?.connected ? '#10b981' : '#f43f5e' }} />
-                <span style={{ fontSize: '1.1rem', fontWeight: 800, color: '#ffffff' }}>
-                  {supabaseStatus?.connected ? 'Supabase Connected' : 'Disconnected'}
-                </span>
-              </div>
-              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                PostgreSQL Cloud DB • {supabaseStatus?.schema_ready ? '6/6 Tables Verified' : 'Pending Schema'} • RLS Enabled
-              </div>
-            </div>
-
-            {/* 5. Database Upload Status */}
-            <div className="glass-panel" style={{ padding: '20px', border: '1px solid rgba(255, 255, 255, 0.12)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                  Database Upload Status
-                </span>
-                <CheckCircle2 size={18} color="#ffffff" />
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                <span className="pulse-dot" style={{ backgroundColor: '#06b6d4' }} />
-                <span style={{ fontSize: '1.1rem', fontWeight: 800, color: '#ffffff' }}>
-                  Live Auto-Sync Active
-                </span>
-              </div>
-              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                {invoiceResults?.invoices ? `${invoiceResults.invoices.length} Invoices Synchronized` : 'Ready for auto-commit on extraction'}
-              </div>
-            </div>
-
-            {/* 6. Redis Telemetry Engine */}
-            <div className="glass-panel" style={{ padding: '20px', border: '1px solid rgba(255, 255, 255, 0.12)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                  Redis Telemetry Engine
-                </span>
-                <Layers size={18} color="#ffffff" />
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                <span className="pulse-dot" style={{ backgroundColor: '#ef4444' }} />
-                <span style={{ fontSize: '1.1rem', fontWeight: 800, color: '#ffffff' }}>
-                  {redisTelemetry?.mode === 'Live Standalone Redis Server' ? 'Redis 7.2 Standalone' : 'Redis 7.2 Active'}
-                </span>
-              </div>
-              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                RAM: {redisTelemetry?.used_memory_human || '2.34 MB'} • Latency: {redisTelemetry?.ping_latency_ms || '<0.2'}ms • Hit Ratio: {redisTelemetry?.hit_rate_percent || 98.6}%
-              </div>
-            </div>
-
-            {/* 7. Grafana Observability */}
-            <div className="glass-panel" style={{ padding: '20px', border: '1px solid rgba(255, 255, 255, 0.12)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                  Grafana Observability
-                </span>
-                <BarChart3 size={18} color="#ffffff" />
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                <span className="pulse-dot" style={{ backgroundColor: '#f97316' }} />
-                <span style={{ fontSize: '1.1rem', fontWeight: 800, color: '#ffffff' }}>
-                  Prometheus /metrics Online
-                </span>
-              </div>
-              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                Scrape Interval: 5s • Port: 8008 • 28 Active Timeseries
-              </div>
+              <div style={{ fontSize: '0.72rem', color: '#475569' }}>{grafanaTelemetry?.scrape_interval || '5s'} scrape • {grafanaTelemetry?.active_metrics_count ?? 0} series</div>
             </div>
           </div>
 
-          {/* ================= GRAFANA & REDIS REAL-TIME OBSERVABILITY HUB ================= */}
-          <div className="glass-panel" style={{ padding: '24px', border: '1px solid rgba(255, 255, 255, 0.12)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', marginBottom: '20px' }}>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'rgba(249, 115, 22, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <BarChart3 size={18} color="#f97316" />
-                  </div>
-                  <h3 style={{ fontSize: '1.18rem', fontWeight: 800, color: '#ffffff' }}>
-                    Grafana Telemetry & Redis Observability Hub
-                  </h3>
-                </div>
-                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  Live OpenMetrics scrape targets, sub-millisecond Redis memory buffer, and end-to-end telemetry streaming.
-                </p>
+          {/* GRAFANA & REDIS HUB */}
+          <div className="glass-panel" style={{ padding: '18px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <BarChart3 size={18} color="#ea580c" />
+                <h3 style={{ fontSize: '1.02rem', fontWeight: 800, color: '#0f172a' }}>Redis &amp; Grafana Telemetry</h3>
               </div>
 
-              {/* Action Buttons */}
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                <button
-                  onClick={handlePingRedis}
-                  disabled={isPingingRedis}
-                  className="btn-secondary"
-                  style={{ fontSize: '0.75rem', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}
-                >
-                  <RefreshCw size={13} className={isPingingRedis ? 'spin' : ''} />
-                  Ping Redis
+              <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <button onClick={handlePingRedis} disabled={isPingingRedis} className="btn-secondary" style={{ fontSize: '0.74rem', padding: '5px 10px' }}>
+                  <RefreshCw size={12} className={isPingingRedis ? 'spin' : ''} /> Ping Redis
                 </button>
-
-                <button
-                  onClick={handleTestRedisCache}
-                  disabled={isTestingRedisCache}
-                  className="btn-secondary"
-                  style={{ fontSize: '0.75rem', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}
-                >
-                  <HardDrive size={13} />
-                  Test Cache Write
+                <button onClick={handleTestRedisCache} disabled={isTestingRedisCache} className="btn-secondary" style={{ fontSize: '0.74rem', padding: '5px 10px' }}>
+                  <HardDrive size={12} /> Test Cache
                 </button>
-
-                <a
-                  href="http://127.0.0.1:8008/metrics"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="btn-secondary"
-                  style={{ fontSize: '0.75rem', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px', textDecoration: 'none' }}
-                >
-                  <ExternalLink size={13} />
-                  Prometheus /metrics
+                <a href="http://127.0.0.1:8008/metrics" target="_blank" rel="noreferrer" className="btn-secondary" style={{ fontSize: '0.74rem', padding: '5px 10px', textDecoration: 'none' }}>
+                  <ExternalLink size={12} /> /metrics
                 </a>
-
-                <button
-                  onClick={handleExportGrafanaDashboard}
-                  className="btn-secondary"
-                  style={{ fontSize: '0.75rem', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}
-                >
-                  <Download size={13} />
-                  Export Grafana Dashboard (.json)
+                <button onClick={handleExportGrafanaDashboard} className="btn-secondary" style={{ fontSize: '0.74rem', padding: '5px 10px' }}>
+                  <Download size={12} /> Grafana JSON
                 </button>
-
-                <button
-                  onClick={() => setTelemetryAutoRefresh(!telemetryAutoRefresh)}
-                  className={`btn-secondary ${telemetryAutoRefresh ? 'active' : ''}`}
-                  style={{ fontSize: '0.75rem', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}
-                >
-                  <Radio size={13} color={telemetryAutoRefresh ? '#10b981' : '#71717a'} />
-                  {telemetryAutoRefresh ? 'Live (3.5s)' : 'Paused'}
+                <button onClick={() => setTelemetryAutoRefresh(!telemetryAutoRefresh)} className="btn-secondary" style={{ fontSize: '0.74rem', padding: '5px 10px' }}>
+                  <Radio size={12} color={telemetryAutoRefresh ? '#059669' : '#64748b'} /> {telemetryAutoRefresh ? 'Live' : 'Paused'}
                 </button>
               </div>
             </div>
 
-            {/* Toasts for Ping & Cache tests */}
             {(redisPingToast || redisTestToast) && (
-              <div style={{ marginBottom: '16px', display: 'flex', gap: '10px' }}>
+              <div style={{ marginBottom: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 {redisPingToast && (
-                  <div style={{ background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#fca5a5', padding: '8px 14px', borderRadius: '8px', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <CheckCircle2 size={14} color="#ef4444" />
-                    <span>{redisPingToast}</span>
+                  <div style={{ background: 'rgba(2, 132, 199, 0.1)', border: '1px solid rgba(2, 132, 199, 0.25)', color: '#0369a1', padding: '6px 12px', borderRadius: '8px', fontSize: '0.76rem', fontWeight: 600 }}>
+                    {redisPingToast}
                   </div>
                 )}
                 {redisTestToast && (
-                  <div style={{ background: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.3)', color: '#6ee7b7', padding: '8px 14px', borderRadius: '8px', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <CheckCircle2 size={14} color="#10b981" />
-                    <span>{redisTestToast}</span>
+                  <div style={{ background: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.28)', color: '#065f46', padding: '6px 12px', borderRadius: '8px', fontSize: '0.76rem', fontWeight: 600 }}>
+                    {redisTestToast}
                   </div>
                 )}
               </div>
             )}
 
-            {/* 6 KEY TELEMETRY TILES */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px', marginBottom: '20px' }}>
-              <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', padding: '14px' }}>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Throughput (RPS)</div>
-                <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#ffffff', marginTop: '4px' }}>
-                  {grafanaTelemetry?.summary?.avg_rps || '24.8'} <span style={{ fontSize: '0.75rem', fontWeight: 500, color: '#a1a1aa' }}>req/s</span>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px', marginBottom: '14px' }}>
+              {[
+                { label: 'RPS (60s)', val: `${grafanaTelemetry?.summary?.avg_rps ?? 0} req/s`, sub: `${grafanaTelemetry?.summary?.total_requests_60s ?? 0} reqs / 60s`, col: '#0284c7' },
+                { label: 'P95 Latency', val: `${grafanaTelemetry?.summary?.p95_latency_ms ?? 0} ms`, sub: `${grafanaTelemetry?.summary?.active_connections ?? 0} in-flight`, col: '#059669' },
+                { label: 'Redis Hit', val: `${redisTelemetry?.hit_rate_percent ?? 0}%`, sub: `${redisTelemetry?.keyspace_hits ?? 0} hits / ${redisTelemetry?.keyspace_misses ?? 0} miss`, col: '#475569' },
+                { label: 'Host CPU', val: grafanaTelemetry?.summary?.cpu_utilization ?? '0.0%', sub: 'psutil measured', col: '#475569' },
+                { label: 'Memory', val: grafanaTelemetry?.summary?.memory_utilization ?? '0.0 MB', sub: 'Process RSS', col: '#475569' },
+                { label: 'Error Rate', val: grafanaTelemetry?.summary?.error_rate ?? '0.00%', sub: 'HTTP 4xx/5xx (60s)', col: (grafanaTelemetry?.summary?.error_rate && grafanaTelemetry.summary.error_rate !== '0.00%') ? '#e11d48' : '#059669' }
+              ].map((m, i) => (
+                <div key={i} className="glass-subcard" style={{ padding: '10px 12px' }}>
+                  <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>{m.label}</div>
+                  <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a', marginTop: '2px' }}>{m.val}</div>
+                  <div style={{ fontSize: '0.68rem', color: m.col, marginTop: '1px', fontWeight: 600 }}>{m.sub}</div>
                 </div>
-                <div style={{ fontSize: '0.68rem', color: '#10b981', marginTop: '2px' }}>Live HTTP Rate</div>
-              </div>
-
-              <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', padding: '14px' }}>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>P95 Latency</div>
-                <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#ffffff', marginTop: '4px' }}>
-                  {grafanaTelemetry?.summary?.p95_latency_ms || '10.8'} <span style={{ fontSize: '0.75rem', fontWeight: 500, color: '#a1a1aa' }}>ms</span>
-                </div>
-                <div style={{ fontSize: '0.68rem', color: '#10b981', marginTop: '2px' }}>Sub-15ms Target Met</div>
-              </div>
-
-              <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', padding: '14px' }}>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Redis Hit Ratio</div>
-                <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#ffffff', marginTop: '4px' }}>
-                  {redisTelemetry?.hit_rate_percent || 98.6}<span style={{ fontSize: '0.85rem' }}>%</span>
-                </div>
-                <div style={{ fontSize: '0.68rem', color: '#a1a1aa', marginTop: '2px' }}>
-                  {redisTelemetry?.keyspace_hits || 146} Hits / {redisTelemetry?.keyspace_misses || 5} Misses
-                </div>
-              </div>
-
-              <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', padding: '14px' }}>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Host CPU Utilization</div>
-                <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#ffffff', marginTop: '4px' }}>
-                  {grafanaTelemetry?.summary?.cpu_utilization || '8.4%'}
-                </div>
-                <div style={{ fontSize: '0.68rem', color: '#a1a1aa', marginTop: '2px' }}>FastAPI & ONNX Worker</div>
-              </div>
-
-              <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', padding: '14px' }}>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Server Memory (RSS)</div>
-                <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#ffffff', marginTop: '4px' }}>
-                  {grafanaTelemetry?.summary?.memory_utilization || '84.6 MB'}
-                </div>
-                <div style={{ fontSize: '0.68rem', color: '#a1a1aa', marginTop: '2px' }}>Process Memory Footprint</div>
-              </div>
-
-              <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', padding: '14px' }}>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>System Error Rate</div>
-                <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#ffffff', marginTop: '4px' }}>
-                  {grafanaTelemetry?.summary?.error_rate || '0.00%'}
-                </div>
-                <div style={{ fontSize: '0.68rem', color: '#10b981', marginTop: '2px' }}>Zero Dropped Requests</div>
-              </div>
+              ))}
             </div>
 
-            {/* REAL-TIME DUAL TIMESERIES GRAPHS */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '16px', marginBottom: '20px' }}>
-              {/* Chart 1: Request Rate (RPS) & P95 Latency */}
-              <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', padding: '18px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#ffffff' }}>
-                    HTTP Throughput (RPS) & Latency Curve
-                  </div>
-                  <div style={{ display: 'flex', gap: '12px', fontSize: '0.72rem' }}>
-                    <span style={{ color: '#38bdf8' }}>● RPS</span>
-                    <span style={{ color: '#a855f7' }}>● P95 Latency (ms)</span>
-                  </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '12px', marginBottom: '14px' }}>
+              <div className="glass-subcard" style={{ padding: '14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#0f172a' }}>Real HTTP Throughput (RPS • 5s buckets)</span>
+                  <span style={{ fontSize: '0.7rem', color: '#0284c7', fontWeight: 600 }}>● Live 60s</span>
                 </div>
-
-                {/* SVG Timeseries Visualizer */}
-                <div style={{ width: '100%', height: '120px' }}>
-                  <svg viewBox="0 0 400 100" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
-                    <defs>
-                      <linearGradient id="rpsGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.25" />
-                        <stop offset="100%" stopColor="#38bdf8" stopOpacity="0.0" />
-                      </linearGradient>
-                    </defs>
-                    {/* Grid lines */}
-                    <line x1="0" y1="20" x2="400" y2="20" stroke="rgba(255,255,255,0.06)" strokeDasharray="3 3" />
-                    <line x1="0" y1="50" x2="400" y2="50" stroke="rgba(255,255,255,0.06)" strokeDasharray="3 3" />
-                    <line x1="0" y1="80" x2="400" y2="80" stroke="rgba(255,255,255,0.06)" strokeDasharray="3 3" />
-
-                    {/* Area & Line */}
-                    {(() => {
-                      const pts = grafanaTelemetry?.timeseries || [
-                        { rps: 20 }, { rps: 24 }, { rps: 22 }, { rps: 30 }, { rps: 28 }, { rps: 35 },
-                        { rps: 26 }, { rps: 32 }, { rps: 38 }, { rps: 29 }, { rps: 31 }, { rps: 34 }
-                      ];
-                      const maxRps = 45;
-                      const coords = pts.map((p, idx) => {
-                        const x = (idx / (pts.length - 1)) * 400;
-                        const y = 90 - (p.rps / maxRps) * 80;
-                        return { x, y };
-                      });
-                      const pathD = coords.reduce((acc, c, i) => `${acc} ${i === 0 ? 'M' : 'L'} ${c.x} ${c.y}`, '');
-                      const areaD = `${pathD} L 400 90 L 0 90 Z`;
-                      return (
-                        <>
-                          <path d={areaD} fill="url(#rpsGrad)" />
-                          <path d={pathD} fill="none" stroke="#38bdf8" strokeWidth="2.2" strokeLinecap="round" />
-                          {coords.map((c, i) => (
-                            <circle key={i} cx={c.x} cy={c.y} r="2.5" fill="#38bdf8" />
-                          ))}
-                        </>
-                      );
-                    })()}
-                  </svg>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.68rem', color: '#71717a', marginTop: '6px' }}>
-                  <span>T - 60s</span>
-                  <span>T - 30s</span>
-                  <span>Live (Now)</span>
+                <div style={{ width: '100%', height: '95px' }}>
+                  {(() => {
+                    const pts = grafanaTelemetry?.timeseries || [];
+                    if (pts.length < 2) {
+                      return <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: '0.76rem' }}>Waiting for live HTTP telemetry...</div>;
+                    }
+                    const maxRps = Math.max(2, ...pts.map(p => Number(p.rps) || 0));
+                    const coords = pts.map((p, idx) => ({
+                      x: (idx / (pts.length - 1)) * 400,
+                      y: 90 - ((Number(p.rps) || 0) / maxRps) * 78
+                    }));
+                    const pathD = coords.reduce((acc, c, i) => `${acc} ${i === 0 ? 'M' : 'L'} ${c.x} ${c.y}`, '');
+                    return (
+                      <svg viewBox="0 0 400 100" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
+                        <defs>
+                          <linearGradient id="rpsGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#0284c7" stopOpacity="0.24" />
+                            <stop offset="100%" stopColor="#0284c7" stopOpacity="0.0" />
+                          </linearGradient>
+                        </defs>
+                        <line x1="0" y1="20" x2="400" y2="20" stroke="rgba(15,23,42,0.08)" strokeDasharray="3 3" />
+                        <line x1="0" y1="50" x2="400" y2="50" stroke="rgba(15,23,42,0.08)" strokeDasharray="3 3" />
+                        <line x1="0" y1="80" x2="400" y2="80" stroke="rgba(15,23,42,0.08)" strokeDasharray="3 3" />
+                        <path d={`${pathD} L 400 90 L 0 90 Z`} fill="url(#rpsGrad)" />
+                        <path d={pathD} fill="none" stroke="#0284c7" strokeWidth="2.2" strokeLinecap="round" />
+                        {coords.map((c, i) => <circle key={i} cx={c.x} cy={c.y} r="2.2" fill="#0284c7" />)}
+                      </svg>
+                    );
+                  })()}
                 </div>
               </div>
 
-              {/* Chart 2: CPU Utilization & Memory */}
-              <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', padding: '18px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#ffffff' }}>
-                    Host CPU Utilization (%)
-                  </div>
-                  <div style={{ display: 'flex', gap: '12px', fontSize: '0.72rem' }}>
-                    <span style={{ color: '#10b981' }}>● CPU %</span>
-                    <span style={{ color: '#71717a' }}>Threshold: 80%</span>
-                  </div>
+              <div className="glass-subcard" style={{ padding: '14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#0f172a' }}>Measured Host CPU (%)</span>
+                  <span style={{ fontSize: '0.7rem', color: '#059669', fontWeight: 600 }}>● Threshold 80%</span>
                 </div>
-
-                {/* SVG Timeseries Visualizer */}
-                <div style={{ width: '100%', height: '120px' }}>
-                  <svg viewBox="0 0 400 100" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
-                    <defs>
-                      <linearGradient id="cpuGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#10b981" stopOpacity="0.25" />
-                        <stop offset="100%" stopColor="#10b981" stopOpacity="0.0" />
-                      </linearGradient>
-                    </defs>
-                    {/* Grid lines */}
-                    <line x1="0" y1="20" x2="400" y2="20" stroke="rgba(255,255,255,0.06)" strokeDasharray="3 3" />
-                    <line x1="0" y1="50" x2="400" y2="50" stroke="rgba(255,255,255,0.06)" strokeDasharray="3 3" />
-                    <line x1="0" y1="80" x2="400" y2="80" stroke="rgba(255,255,255,0.06)" strokeDasharray="3 3" />
-
-                    {/* Area & Line */}
-                    {(() => {
-                      const pts = grafanaTelemetry?.timeseries || [
-                        { cpu_percent: 6 }, { cpu_percent: 8 }, { cpu_percent: 7 }, { cpu_percent: 12 },
-                        { cpu_percent: 9 }, { cpu_percent: 14 }, { cpu_percent: 10 }, { cpu_percent: 8 },
-                        { cpu_percent: 11 }, { cpu_percent: 7 }, { cpu_percent: 9 }, { cpu_percent: 8 }
-                      ];
-                      const maxCpu = 50;
-                      const coords = pts.map((p, idx) => {
-                        const x = (idx / (pts.length - 1)) * 400;
-                        const y = 90 - (p.cpu_percent / maxCpu) * 80;
-                        return { x, y };
-                      });
-                      const pathD = coords.reduce((acc, c, i) => `${acc} ${i === 0 ? 'M' : 'L'} ${c.x} ${c.y}`, '');
-                      const areaD = `${pathD} L 400 90 L 0 90 Z`;
-                      return (
-                        <>
-                          <path d={areaD} fill="url(#cpuGrad)" />
-                          <path d={pathD} fill="none" stroke="#10b981" strokeWidth="2.2" strokeLinecap="round" />
-                          {coords.map((c, i) => (
-                            <circle key={i} cx={c.x} cy={c.y} r="2.5" fill="#10b981" />
-                          ))}
-                        </>
-                      );
-                    })()}
-                  </svg>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.68rem', color: '#71717a', marginTop: '6px' }}>
-                  <span>T - 60s</span>
-                  <span>T - 30s</span>
-                  <span>Live (Now)</span>
+                <div style={{ width: '100%', height: '95px' }}>
+                  {(() => {
+                    const pts = grafanaTelemetry?.timeseries || [];
+                    if (pts.length < 2) {
+                      return <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: '0.76rem' }}>Waiting for CPU samples...</div>;
+                    }
+                    const maxCpu = Math.max(25, ...pts.map(p => Number(p.cpu_percent) || 0));
+                    const coords = pts.map((p, idx) => ({
+                      x: (idx / (pts.length - 1)) * 400,
+                      y: 90 - ((Number(p.cpu_percent) || 0) / maxCpu) * 78
+                    }));
+                    const pathD = coords.reduce((acc, c, i) => `${acc} ${i === 0 ? 'M' : 'L'} ${c.x} ${c.y}`, '');
+                    return (
+                      <svg viewBox="0 0 400 100" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
+                        <defs>
+                          <linearGradient id="cpuGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#059669" stopOpacity="0.24" />
+                            <stop offset="100%" stopColor="#059669" stopOpacity="0.0" />
+                          </linearGradient>
+                        </defs>
+                        <line x1="0" y1="20" x2="400" y2="20" stroke="rgba(15,23,42,0.08)" strokeDasharray="3 3" />
+                        <line x1="0" y1="50" x2="400" y2="50" stroke="rgba(15,23,42,0.08)" strokeDasharray="3 3" />
+                        <line x1="0" y1="80" x2="400" y2="80" stroke="rgba(15,23,42,0.08)" strokeDasharray="3 3" />
+                        <path d={`${pathD} L 400 90 L 0 90 Z`} fill="url(#cpuGrad)" />
+                        <path d={pathD} fill="none" stroke="#059669" strokeWidth="2.2" strokeLinecap="round" />
+                        {coords.map((c, i) => <circle key={i} cx={c.x} cy={c.y} r="2.2" fill="#059669" />)}
+                      </svg>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
 
-            {/* REDIS KEYSPACES & PROMETHEUS SCRAPER CONFIG */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '16px' }}>
-              {/* Redis Namespaces Breakdown */}
-              <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', padding: '16px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Layers size={16} color="#ef4444" />
-                    <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#ffffff' }}>Active Redis Namespaces</span>
-                  </div>
-                  <span style={{ fontSize: '0.72rem', color: '#a1a1aa' }}>
-                    Total Keys: {redisTelemetry?.total_keys || 7}
-                  </span>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '12px' }}>
+              <div className="glass-subcard" style={{ padding: '14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#0f172a' }}>Live Redis Keyspace</span>
+                  <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Keys: {redisTelemetry?.total_keys ?? 0} • {redisTelemetry?.ops_per_sec ?? 0} ops/s</span>
                 </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {(redisTelemetry?.cached_namespaces || [
-                    { namespace: 'otp:guard', keys: 2, ttl: '60s - 300s', purpose: 'Anti-bot rate limits & active OTP sessions' },
-                    { namespace: 'ocr:cache', keys: 4, ttl: '3600s', purpose: 'Fast extraction deduplication & SHA-256 digests' },
-                    { namespace: 'auth:whitelist', keys: 1, ttl: 'Permanent', purpose: 'Authorized employee fast-lookup set' },
-                    { namespace: 'telemetry:grafana', keys: 7, ttl: 'Rolling 1h', purpose: 'OpenMetrics rolling time-series buffer' }
-                  ]).map((ns, idx) => (
-                    <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: 'rgba(255, 255, 255, 0.03)', borderRadius: '6px', fontSize: '0.76rem' }}>
-                      <div>
-                        <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#f8fafc' }}>{ns.namespace}</span>
-                        <div style={{ fontSize: '0.68rem', color: '#71717a', marginTop: '1px' }}>{ns.purpose}</div>
-                      </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <span style={{ fontFamily: 'var(--font-mono)', color: '#38bdf8' }}>{ns.ttl}</span>
-                      </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {(redisTelemetry?.cached_namespaces || []).length === 0 ? (
+                    <div style={{ padding: '12px', textAlign: 'center', color: '#64748b', fontSize: '0.75rem', background: 'rgba(255,255,255,0.4)', borderRadius: '6px' }}>
+                      {redisTelemetry?.connected ? 'No active keys cached right now.' : 'Redis server offline — using in-memory fallback.'}
                     </div>
-                  ))}
+                  ) : (
+                    redisTelemetry.cached_namespaces.map((ns, idx) => (
+                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', background: 'rgba(255, 255, 255, 0.5)', borderRadius: '6px', fontSize: '0.75rem' }}>
+                        <div>
+                          <strong style={{ color: '#0f172a' }}>{ns.namespace}</strong>
+                          <span style={{ fontSize: '0.7rem', color: '#64748b', marginLeft: '8px' }}>{ns.keys} key(s)</span>
+                        </div>
+                        <span style={{ color: '#0284c7', fontWeight: 600 }}>{ns.ttl}</span>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
 
-              {/* Prometheus Scrape Configuration */}
-              <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', padding: '16px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <BarChart3 size={16} color="#f97316" />
-                    <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#ffffff' }}>Prometheus Scrape Configuration</span>
-                  </div>
-                  <span className="badge badge-success" style={{ fontSize: '0.68rem' }}>EXPORTER ACTIVE</span>
+              <div className="glass-subcard" style={{ padding: '14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#0f172a' }}>Prometheus Scrape</span>
+                  <span className="badge badge-success" style={{ fontSize: '0.66rem' }}>ACTIVE</span>
                 </div>
-
-                <p style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: '10px' }}>
-                  Add this block to your <code>prometheus.yml</code> or Grafana Agent to scrape metrics every 5 seconds:
-                </p>
-
-                <pre style={{ background: '#09090b', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '6px', padding: '12px', fontSize: '0.72rem', color: '#e4e4e7', fontFamily: 'var(--font-mono)', overflowX: 'auto', margin: 0 }}>
+                <pre style={{ background: 'rgba(255, 255, 255, 0.65)', border: '1px solid rgba(15, 23, 42, 0.1)', borderRadius: '8px', padding: '10px', fontSize: '0.72rem', color: '#1e293b', overflowX: 'auto', margin: 0 }}>
 {`scrape_configs:
   - job_name: 'cg-ocr-engine'
     scrape_interval: 5s
@@ -4262,100 +3637,139 @@ export default function App() {
             </div>
           </div>
 
-          {/* NOTIFICATIONS & VULNERABILITY MONITOR SECTION */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '20px' }}>
-            {/* Notifications Section */}
-            <div className="glass-panel" style={{ padding: '22px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
-                <Info size={18} color="#ffffff" />
-                <h3 style={{ fontSize: '1.05rem', fontWeight: 700 }}>System Notifications & Telemetry Feed</h3>
+          {/* TOKEN COST & API USAGE */}
+          <div className="glass-panel" style={{ padding: '18px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Zap size={17} color="#7c3aed" />
+                <h3 style={{ fontSize: '1rem', fontWeight: 800, color: '#0f172a' }}>API Calls &amp; Token Cost</h3>
+                <span className="badge badge-info" style={{ fontSize: '0.68rem' }}>Live Measured</span>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <div style={{ padding: '12px 14px', borderRadius: '10px', background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.2)', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-                  <CheckCircle size={16} color="#ffffff" style={{ marginTop: '2px', flexShrink: 0 }} />
-                  <div>
-                    <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#f8fafc' }}>Deterministic Dual-Route Pipeline Operational</div>
-                    <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                      Zero-OCR bypass engaged for XLSX/CSV/TSV/TXT and native vector PDFs with sub-15ms throughput.
-                    </div>
-                  </div>
+              <button onClick={handleResetUsageTelemetry} className="btn-secondary" style={{ fontSize: '0.72rem', padding: '4px 10px' }}>
+                Reset Counters
+              </button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px', marginBottom: '14px' }}>
+              {[
+                {
+                  label: 'Total API Calls',
+                  val: (usageTelemetry?.total_calls ?? 0).toLocaleString(),
+                  sub: `${usageTelemetry?.gemini_calls ?? 0} Gemini • ${usageTelemetry?.ocr_calls ?? 0} Baidu OCR`,
+                  col: '#0284c7'
+                },
+                {
+                  label: 'Total Tokens',
+                  val: (usageTelemetry?.total_tokens ?? 0).toLocaleString(),
+                  sub: `${(usageTelemetry?.prompt_tokens ?? 0).toLocaleString()} in • ${(usageTelemetry?.candidates_tokens ?? 0).toLocaleString()} out`,
+                  col: '#7c3aed'
+                },
+                {
+                  label: 'Est. Token Cost',
+                  val: `$${Number(usageTelemetry?.estimated_cost_usd ?? 0).toFixed(5)}`,
+                  sub: 'USD from usageMetadata',
+                  col: '#059669'
+                },
+                {
+                  label: 'Call Reliability',
+                  val: usageTelemetry?.total_calls ? `${Math.round(((usageTelemetry.success_calls || 0) / usageTelemetry.total_calls) * 100)}%` : '100%',
+                  sub: `${usageTelemetry?.failed_calls ?? 0} failed calls`,
+                  col: (usageTelemetry?.failed_calls || 0) > 0 ? '#e11d48' : '#059669'
+                }
+              ].map((u, idx) => (
+                <div key={idx} className="glass-subcard" style={{ padding: '10px 12px' }}>
+                  <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>{u.label}</div>
+                  <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0f172a', marginTop: '2px' }}>{u.val}</div>
+                  <div style={{ fontSize: '0.68rem', color: u.col, marginTop: '1px', fontWeight: 600 }}>{u.sub}</div>
                 </div>
-                <div style={{ padding: '12px 14px', borderRadius: '10px', background: 'rgba(192, 132, 252, 0.08)', border: '1px solid rgba(192, 132, 252, 0.2)', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-                  <Sparkles size={16} color="#c084fc" style={{ marginTop: '2px', flexShrink: 0 }} />
-                  <div>
-                    <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#f8fafc' }}>API Guardrail Pacing: 15 RPM Enforced</div>
-                    <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                      Batch sliding window and inter-request sleep prevent HTTP 429 quota exhaustion on Gemini API.
-                    </div>
-                  </div>
+              ))}
+            </div>
+
+            <div style={{ overflowX: 'auto' }}>
+              <table className="custom-table" style={{ fontSize: '0.76rem' }}>
+                <thead>
+                  <tr>
+                    <th>Module</th>
+                    <th>Calls</th>
+                    <th>Prompt Tokens</th>
+                    <th>Output Tokens</th>
+                    <th>Est. Cost</th>
+                    <th>Last Model</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(usageTelemetry?.by_feature || []).map((row) => (
+                    <tr key={row.feature}>
+                      <td style={{ fontWeight: 600, color: '#0f172a' }}>{row.label}</td>
+                      <td style={{ fontWeight: 700, color: '#0284c7' }}>{row.calls}</td>
+                      <td style={{ color: '#334155' }}>{(row.prompt_tokens || 0).toLocaleString()}</td>
+                      <td style={{ color: '#334155' }}>{(row.candidates_tokens || 0).toLocaleString()}</td>
+                      <td style={{ fontWeight: 700, color: '#059669' }}>${Number(row.cost_usd || 0).toFixed(5)}</td>
+                      <td style={{ color: '#64748b', fontSize: '0.72rem' }}>{row.last_model || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* NOTIFICATIONS & VULNERABILITY MONITOR */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '14px' }}>
+            <div className="glass-panel" style={{ padding: '16px' }}>
+              <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0f172a', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Info size={16} color="#0284c7" /> Pipeline Feed
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div className="glass-subcard" style={{ padding: '9px 12px' }}>
+                  <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#0f172a' }}>PDF → Baidu Unlimited-OCR + Gemini &lt;85%</div>
+                  <div style={{ fontSize: '0.74rem', color: '#475569' }}>Zero-OCR fast-path active for XLSX/CSV/TSV/TXT.</div>
                 </div>
-                <div style={{ padding: '12px 14px', borderRadius: '10px', background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.2)', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-                  <Database size={16} color="#10b981" style={{ marginTop: '2px', flexShrink: 0 }} />
-                  <div>
-                    <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#f8fafc' }}>Supabase PostgreSQL Schema Synchronized</div>
-                    <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                      All 6 target tables (documents, invoices, invoice_items, rules, logs, stats) ready for relational querying.
-                    </div>
-                  </div>
+                <div className="glass-subcard" style={{ padding: '9px 12px' }}>
+                  <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#0f172a' }}>15 RPM API Guardrail Enforced</div>
+                  <div style={{ fontSize: '0.74rem', color: '#475569' }}>Batch pacing prevents Gemini 429 quota limits.</div>
+                </div>
+                <div className="glass-subcard" style={{ padding: '9px 12px' }}>
+                  <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#0f172a' }}>Supabase Schema Synced</div>
+                  <div style={{ fontSize: '0.74rem', color: '#475569' }}>6 normalized PostgreSQL tables ready.</div>
                 </div>
               </div>
             </div>
 
-            {/* Vulnerability Monitor Section */}
-            <div className="glass-panel" style={{ padding: '22px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
-                <ShieldCheck size={18} color="#ffffff" />
-                <h3 style={{ fontSize: '1.05rem', fontWeight: 700 }}>Vulnerability & Threat Assessment</h3>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <div style={{ padding: '12px 14px', borderRadius: '10px', background: 'rgba(52, 211, 153, 0.08)', border: '1px solid rgba(52, 211, 153, 0.25)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <Shield size={18} color="#34d399" />
-                    <div>
-                      <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#f8fafc' }}>0 Critical Vulnerabilities Detected</div>
-                      <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>Codebase audited against OWASP Top 10 guidelines</div>
-                    </div>
-                  </div>
-                  <span className="badge badge-success" style={{ fontSize: '0.7rem' }}>SECURE</span>
-                </div>
-
-                <div style={{ padding: '12px 14px', borderRadius: '10px', background: 'rgba(251, 191, 36, 0.08)', border: '1px solid rgba(251, 191, 36, 0.25)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="glass-panel" style={{ padding: '16px' }}>
+              <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0f172a', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <ShieldCheck size={16} color="#059669" /> Security Shield
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div className="glass-subcard" style={{ padding: '9px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
-                    <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#f8fafc' }}>CORS Dev Policy Active</div>
-                    <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>Localhost dev server permitted; enforce domain restriction in production</div>
+                    <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#0f172a' }}>0 Critical Issues</div>
+                    <div style={{ fontSize: '0.72rem', color: '#475569' }}>OWASP Top 10 audited</div>
                   </div>
-                  <span className="badge badge-warning" style={{ fontSize: '0.7rem' }}>DEV NOTICE</span>
+                  <span className="badge badge-success" style={{ fontSize: '0.68rem' }}>SECURE</span>
                 </div>
-
-                <div style={{ padding: '12px 14px', borderRadius: '10px', background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div className="glass-subcard" style={{ padding: '9px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
-                    <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#f8fafc' }}>Anti-Bot OTP Guard & Rate Limiting</div>
-                    <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>Max 3 requests / 60s with 3-attempt brute-force lockout</div>
+                    <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#0f172a' }}>CORS Dev Policy</div>
+                    <div style={{ fontSize: '0.72rem', color: '#475569' }}>Restrict domain in production</div>
                   </div>
-                  <span className="badge badge-info" style={{ fontSize: '0.7rem' }}>ARMED</span>
+                  <span className="badge badge-warning" style={{ fontSize: '0.68rem' }}>NOTICE</span>
+                </div>
+                <div className="glass-subcard" style={{ padding: '9px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#0f172a' }}>Anti-Bot OTP Guard</div>
+                    <div style={{ fontSize: '0.72rem', color: '#475569' }}>3 req / 60s • 3-attempt lockout</div>
+                  </div>
+                  <span className="badge badge-info" style={{ fontSize: '0.68rem' }}>ARMED</span>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* FLAGGED UNAUTHORIZED LOGIN ATTEMPTS SECTION */}
-          <div className="glass-panel" style={{ padding: '24px', borderColor: 'rgba(244, 63, 94, 0.3)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div style={{ width: '34px', height: '34px', borderRadius: '8px', background: 'rgba(244, 63, 94, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <ShieldAlert size={18} color="#ffffff" />
-                </div>
-                <div>
-                  <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#f8fafc' }}>
-                    Flagged Unauthorized Login Attempts
-                  </h3>
-                  <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                    Any unauthorized email, failed OTP, or bot attack is intercepted by OTP Guard and logged with IP address and device name.
-                  </p>
-                </div>
-              </div>
-
-
+          {/* FLAGGED LOGIN ATTEMPTS */}
+          <div className="glass-panel" style={{ padding: '18px', borderColor: 'rgba(244, 63, 94, 0.25)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+              <ShieldAlert size={18} color="#e11d48" />
+              <h3 style={{ fontSize: '0.98rem', fontWeight: 800, color: '#0f172a' }}>Flagged Login Attempts</h3>
             </div>
 
             <div style={{ overflowX: 'auto' }}>
@@ -4369,64 +3783,42 @@ export default function App() {
 
                 if (unauthorizedList.length === 0) {
                   return (
-                    <div style={{ padding: '36px 20px', textAlign: 'center', color: '#71717a', fontSize: '0.84rem' }}>
-                      <ShieldCheck size={32} color="#52525b" style={{ margin: '0 auto 10px auto' }} />
-                      <div style={{ color: '#a1a1aa', fontWeight: 600 }}>No Unauthorized Login Attempts</div>
-                      <div style={{ fontSize: '0.76rem', color: '#71717a', marginTop: '2px' }}>
-                        All recent authentication requests have been verified through authorized employee credentials.
-                      </div>
+                    <div style={{ padding: '24px 16px', textAlign: 'center', color: '#64748b', fontSize: '0.82rem' }}>
+                      <ShieldCheck size={26} color="#059669" style={{ margin: '0 auto 6px auto' }} />
+                      <div style={{ color: '#0f172a', fontWeight: 600 }}>No Unauthorized Attempts</div>
                     </div>
                   );
                 }
 
                 return (
-                  <table className="custom-table" style={{ fontSize: '0.8rem' }}>
+                  <table className="custom-table" style={{ fontSize: '0.78rem' }}>
                     <thead>
                       <tr>
-                        <th>Timestamp</th>
-                        <th>IP Address</th>
-                        <th>Device Name</th>
-                        <th>Security Incident</th>
+                        <th>Time</th>
+                        <th>IP</th>
+                        <th>Device</th>
+                        <th>Incident</th>
                         <th>Severity</th>
-                        <th>Action</th>
+                        <th>Status</th>
                       </tr>
                     </thead>
                     <tbody>
                       {unauthorizedList.map((evt, idx) => (
-                        <tr key={evt.id || idx} style={{ background: 'rgba(255, 255, 255, 0.02)' }}>
-                          <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', color: '#a1a1aa', whiteSpace: 'nowrap' }}>
-                            {evt.timestamp}
-                          </td>
+                        <tr key={evt.id || idx}>
+                          <td style={{ color: '#475569', whiteSpace: 'nowrap' }}>{evt.timestamp}</td>
                           <td>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                              <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#f87171', fontSize: '0.82rem' }}>
-                                {evt.ip}
-                              </span>
-                              <span style={{ fontSize: '0.68rem', color: '#71717a' }}>
-                                {evt.ip === '103.196.235.141' ? 'Dhaka, BD • Dhaka Fiber Net' : 'External WAN IP'}
-                              </span>
+                            <strong style={{ color: '#be123c' }}>{evt.ip}</strong>
+                            <div style={{ fontSize: '0.68rem', color: '#64748b' }}>
+                              {evt.ip === '103.196.235.141' ? 'Dhaka, BD' : 'External IP'}
                             </div>
                           </td>
-                          <td style={{ color: '#f4f4f5', fontWeight: 600 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <Monitor size={15} color="#94a3b8" />
-                              <span>{evt.device}</span>
-                            </div>
-                          </td>
+                          <td style={{ fontWeight: 600, color: '#0f172a' }}>{evt.device}</td>
                           <td>
-                            <div style={{ fontWeight: 600, color: '#ffffff' }}>{evt.title}</div>
-                            <div style={{ fontSize: '0.74rem', color: '#a1a1aa', marginTop: '2px', maxWidth: '380px' }}>{evt.message}</div>
+                            <strong style={{ color: '#0f172a' }}>{evt.title}</strong>
+                            <div style={{ fontSize: '0.72rem', color: '#475569', maxWidth: '340px' }}>{evt.message}</div>
                           </td>
-                          <td>
-                            <span className={`badge ${evt.severity === 'CRITICAL' || evt.severity === 'HIGH' ? 'badge-error' : 'badge-warning'}`}>
-                              {evt.severity}
-                            </span>
-                          </td>
-                          <td>
-                            <span className="badge badge-error" style={{ fontSize: '0.68rem', letterSpacing: '0.04em' }}>
-                              BLOCKED
-                            </span>
-                          </td>
+                          <td><span className={`badge ${evt.severity === 'CRITICAL' || evt.severity === 'HIGH' ? 'badge-error' : 'badge-warning'}`}>{evt.severity}</span></td>
+                          <td><span className="badge badge-error" style={{ fontSize: '0.66rem' }}>BLOCKED</span></td>
                         </tr>
                       ))}
                     </tbody>
@@ -4440,81 +3832,52 @@ export default function App() {
 
       {/* ================= MAIN TAB 3: TEAM COLLABORATION CHAT ================= */}
       {mainTab === 'chat' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '1000px', margin: '0 auto' }}>
-          {/* Chat Header */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '960px', margin: '0 auto' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
             <div>
-              <h2 style={{ fontSize: '1.4rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <MessageSquare size={22} color="var(--accent-blue)" />
-                Team Chat & Audit Messaging
+              <h2 style={{ fontSize: '1.18rem', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <MessageSquare size={19} color="#0284c7" />
+                Team Chat
               </h2>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                Secure, real-time messaging channel for authenticated employees and administrators.
+              <p style={{ fontSize: '0.78rem', color: '#475569', marginTop: '2px' }}>
+                Real-time workspace messaging for verified staff.
               </p>
             </div>
-
-            <button
-              onClick={fetchChatMessages}
-              className="btn-secondary"
-              style={{ fontSize: '0.82rem', padding: '6px 12px' }}
-            >
-              <RefreshCw size={14} /> Refresh Chat
+            <button onClick={fetchChatMessages} className="btn-secondary" style={{ fontSize: '0.78rem', padding: '6px 12px' }}>
+              <RefreshCw size={13} /> Refresh
             </button>
           </div>
 
-          {/* Active Colleagues Ribbon */}
-          <div className="glass-panel" style={{ padding: '12px 18px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Users size={16} color="var(--accent-blue)" />
-              <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#f8fafc' }}>Active Colleagues Online:</span>
-            </div>
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              {[
-                { name: 'Sifat Khan', role: 'ADMIN', color: '#fbbf24' },
-                { name: 'Audit Officer', role: 'AUDIT', color: '#38bdf8' },
-                { name: 'Finance Lead', role: 'FINANCE', color: '#34d399' },
-                { name: `${currentUser?.name || currentUser?.email} (You)`, role: currentUser?.role, color: '#c084fc' }
-              ].map((u, i) => (
-                <span key={i} style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  background: 'rgba(30, 41, 59, 0.7)',
-                  padding: '3px 10px',
-                  borderRadius: '9999px',
-                  fontSize: '0.75rem',
-                  border: '1px solid var(--border-color)'
-                }}>
-                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: u.color }} />
-                  <strong style={{ color: '#f8fafc' }}>{u.name}</strong>
-                  <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>({u.role})</span>
-                </span>
-              ))}
-            </div>
+          <div className="glass-panel" style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Users size={14} color="#0284c7" /> Online:
+            </span>
+            {[
+              { name: 'Sifat Khan', role: 'ADMIN', color: '#d97706' },
+              { name: 'Audit Officer', role: 'AUDIT', color: '#0284c7' },
+              { name: 'Finance Lead', role: 'FINANCE', color: '#059669' },
+              { name: `${currentUser?.name || currentUser?.email} (You)`, role: currentUser?.role, color: '#7c3aed' }
+            ].map((u, i) => (
+              <span key={i} className="glass-subcard" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '2px 9px', borderRadius: '9999px', fontSize: '0.72rem' }}>
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: u.color }} />
+                <strong style={{ color: '#0f172a' }}>{u.name}</strong>
+              </span>
+            ))}
           </div>
 
-          {/* Message Feed Window */}
-          <div className="glass-panel" style={{ padding: '20px', minHeight: '380px', maxHeight: '520px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div className="glass-panel" style={{ padding: '16px', minHeight: '300px', maxHeight: '400px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {chatMessages.length === 0 ? (
-              <div style={{ textAlign: 'center', color: 'var(--text-muted)', margin: 'auto' }}>
-                No messages yet. Send an update below!
-              </div>
+              <div style={{ textAlign: 'center', color: '#64748b', margin: 'auto', fontSize: '0.84rem' }}>No messages yet.</div>
             ) : (
               chatMessages.map((msg, i) => {
                 const isMe = msg.email === currentUser?.email || msg.sender.includes(currentUser?.name || 'User');
                 return (
                   <div key={msg.id || i} style={{ display: 'flex', flexDirection: 'column', alignItems: isMe ? 'flex-end' : 'flex-start' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                      <span style={{ fontWeight: 700, color: isMe ? '#38bdf8' : '#e2e8f0' }}>{msg.sender}</span>
-                      <span className={`badge ${msg.role === 'ADMIN' ? 'badge-warning' : 'badge-info'}`} style={{ fontSize: '0.62rem', padding: '1px 5px' }}>
-                        {msg.role}
-                      </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px', fontSize: '0.7rem', color: '#64748b' }}>
+                      <span style={{ fontWeight: 700, color: isMe ? '#0284c7' : '#0f172a' }}>{msg.sender}</span>
                       <span>• {msg.time}</span>
                     </div>
-                    <div
-                      className={isMe ? 'chat-bubble-me' : 'chat-bubble-other'}
-                      style={{ padding: '10px 16px', maxWidth: '75%', fontSize: '0.86rem', lineHeight: 1.5 }}
-                    >
+                    <div className={isMe ? 'chat-bubble-me' : 'chat-bubble-other'} style={{ padding: '8px 14px', maxWidth: '75%', fontSize: '0.84rem', lineHeight: 1.45 }}>
                       {msg.text}
                     </div>
                   </div>
@@ -4523,60 +3886,29 @@ export default function App() {
             )}
           </div>
 
-          {/* Fast Preset Chips */}
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Fast updates:</span>
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
             {[
-              'Processed batch 1000 pages clean',
-              'Verified invoice #CHL-2026-0100 math: MATCH',
-              'Saved validated invoices to Supabase DB',
-              'Zero OCR executed with 0 tokens burn'
+              'Batch processed cleanly',
+              'Invoice math verified: MATCH',
+              'Synced to Supabase DB'
             ].map((preset, idx) => (
-              <button
-                key={idx}
-                onClick={() => handleSendChatMessage(preset)}
-                style={{
-                  background: 'rgba(30, 41, 59, 0.6)',
-                  border: '1px solid var(--border-color)',
-                  color: '#cbd5e1',
-                  borderRadius: '9999px',
-                  padding: '4px 10px',
-                  fontSize: '0.72rem',
-                  cursor: 'pointer'
-                }}
-              >
+              <button key={idx} onClick={() => handleSendChatMessage(preset)} className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.72rem' }}>
                 {preset}
               </button>
             ))}
           </div>
 
-          {/* Input Box */}
-          <form
-            onSubmit={(e) => { e.preventDefault(); handleSendChatMessage(); }}
-            style={{ display: 'flex', gap: '10px', alignItems: 'center' }}
-          >
+          <form onSubmit={(e) => { e.preventDefault(); handleSendChatMessage(); }} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <input
               type="text"
+              className="glass-input"
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
-              placeholder="Type a message or audit note to your team..."
-              style={{
-                flex: 1,
-                padding: '12px 18px',
-                borderRadius: '12px',
-                border: '1px solid var(--border-color)',
-                background: 'rgba(15, 23, 42, 0.7)',
-                color: '#f8fafc',
-                fontSize: '0.88rem'
-              }}
+              placeholder="Write a message..."
+              style={{ flex: 1, padding: '10px 14px', fontSize: '0.84rem' }}
             />
-            <button
-              type="submit"
-              disabled={isSendingChat || !chatInput.trim()}
-              className="btn-primary"
-              style={{ padding: '12px 22px', fontSize: '0.88rem' }}
-            >
-              <Send size={15} /> Send
+            <button type="submit" disabled={isSendingChat || !chatInput.trim()} className="btn-primary" style={{ padding: '10px 18px', fontSize: '0.84rem' }}>
+              <Send size={14} /> Send
             </button>
           </form>
         </div>
@@ -4584,86 +3916,57 @@ export default function App() {
 
       {/* ================= ADMIN MANAGE EMPLOYEES MODAL ================= */}
       {showAdminModal && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-          <div className="auth-box" style={{ width: '100%', maxWidth: '520px', padding: '30px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <Users size={22} color="#fbbf24" />
-                <h3 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Manage Authorized Employees</h3>
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15, 23, 42, 0.28)', backdropFilter: 'blur(12px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+          <div className="auth-box" style={{ width: '100%', maxWidth: '480px', padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Users size={19} color="#d97706" />
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#0f172a' }}>Manage Employees</h3>
               </div>
-              <button onClick={() => setShowAdminModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
-                <X size={20} />
+              <button onClick={() => setShowAdminModal(false)} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }}>
+                <X size={18} />
               </button>
             </div>
 
-            <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '20px', lineHeight: 1.5 }}>
-              Admin Console: Add new employee emails permitted to log in via OTP Guard. Unauthorized emails are blocked and flagged with client IP and device name.
+            <p style={{ fontSize: '0.78rem', color: '#475569', marginBottom: '14px', lineHeight: 1.45 }}>
+              Authorize emails allowed to sign in via OTP Guard.
             </p>
 
-            {/* Add Employee Form */}
-            <form onSubmit={handleAddEmployee} style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+            <form onSubmit={handleAddEmployee} style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
               <input
                 type="email"
+                className="glass-input"
                 value={newEmployeeEmail}
                 onChange={(e) => setNewEmployeeEmail(e.target.value)}
-                placeholder="e.g. employee.name@careguide.com"
+                placeholder="employee@careguide.com"
                 required
-                style={{
-                  flex: 1,
-                  padding: '10px 14px',
-                  borderRadius: '8px',
-                  border: '1px solid var(--border-color)',
-                  background: '#070d19',
-                  color: '#fff',
-                  fontSize: '0.85rem'
-                }}
+                style={{ flex: 1, padding: '8px 12px', fontSize: '0.82rem' }}
               />
-              <button
-                type="submit"
-                disabled={adminActionLoading}
-                className="btn-primary"
-                style={{ padding: '10px 16px', fontSize: '0.82rem', background: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)' }}
-              >
-                Add Employee
+              <button type="submit" disabled={adminActionLoading} className="btn-primary" style={{ padding: '8px 14px', fontSize: '0.8rem' }}>
+                Add
               </button>
             </form>
 
             {adminActionMsg && (
-              <div style={{ padding: '8px 12px', borderRadius: '8px', background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.3)', color: '#38bdf8', fontSize: '0.78rem', marginBottom: '16px' }}>
+              <div style={{ padding: '7px 10px', borderRadius: '8px', background: 'rgba(2, 132, 199, 0.1)', border: '1px solid rgba(2, 132, 199, 0.25)', color: '#0369a1', fontSize: '0.76rem', marginBottom: '12px' }}>
                 {adminActionMsg}
               </div>
             )}
 
-            {/* Authorized Employees List */}
-            <div style={{ maxHeight: '240px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                Authorized Whitelist ({employeeList.length}):
+            <div style={{ maxHeight: '220px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
+                Whitelist ({employeeList.length})
               </span>
               {employeeList.map((email, idx) => (
-                <div
-                  key={idx}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '8px 12px',
-                    borderRadius: '8px',
-                    background: 'rgba(30, 41, 59, 0.4)',
-                    border: '1px solid var(--border-color)'
-                  }}
-                >
+                <div key={idx} className="glass-subcard" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Mail size={14} color="#ffffff" />
-                    <span style={{ fontSize: '0.84rem', color: '#f8fafc', fontFamily: 'var(--font-mono)' }}>{email}</span>
+                    <Mail size={13} color="#0284c7" />
+                    <span style={{ fontSize: '0.8rem', color: '#0f172a', fontWeight: 500 }}>{email}</span>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span className="badge badge-success" style={{ fontSize: '0.65rem' }}>Authorized</span>
-                    <button
-                      onClick={() => handleRemoveEmployee(email)}
-                      style={{ background: 'none', border: 'none', color: 'var(--accent-rose)', cursor: 'pointer', padding: '4px' }}
-                      title="Revoke Access"
-                    >
-                      <Trash2 size={14} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span className="badge badge-success" style={{ fontSize: '0.64rem' }}>Allowed</span>
+                    <button onClick={() => handleRemoveEmployee(email)} style={{ background: 'none', border: 'none', color: '#be123c', cursor: 'pointer', padding: '3px' }} title="Revoke">
+                      <Trash2 size={13} />
                     </button>
                   </div>
                 </div>
@@ -4672,6 +3975,7 @@ export default function App() {
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 }

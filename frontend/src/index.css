@@ -1,29 +1,36 @@
 :root {
-  --bg-primary: #000000;
-  --bg-secondary: #09090b;
-  --bg-card: #0a0a0c;
-  --bg-card-hover: #121215;
-  --border-color: rgba(255, 255, 255, 0.09);
-  --border-focus: rgba(255, 255, 255, 0.25);
+  --bg-primary: #030712;
+  --bg-secondary: rgba(15, 23, 42, 0.55);
+  --bg-card: rgba(15, 23, 42, 0.42);
+  --bg-card-hover: rgba(30, 41, 59, 0.54);
+  --border-color: rgba(255, 255, 255, 0.14);
+  --border-focus: rgba(255, 255, 255, 0.34);
   --text-primary: #ffffff;
-  --text-secondary: #a1a1aa;
-  --text-muted: #71717a;
-  --text-subtle: #52525b;
+  --text-secondary: #e2e8f0;
+  --text-muted: #94a3b8;
+  --text-subtle: #64748b;
+  --accent-blue: #38bdf8;
   
-  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
-  --font-mono: "SF Mono", "JetBrains Mono", Menlo, Consolas, Monaco, monospace;
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
 body {
   background-color: var(--bg-primary);
+  background-image:
+    radial-gradient(ellipse at 12% 8%, rgba(56, 189, 248, 0.16), transparent 42%),
+    radial-gradient(ellipse at 88% 15%, rgba(168, 85, 247, 0.15), transparent 44%),
+    radial-gradient(ellipse at 50% 92%, rgba(16, 185, 129, 0.10), transparent 48%);
+  background-attachment: fixed;
   color: var(--text-primary);
   font-family: var(--font-sans);
   min-height: 100vh;
@@ -31,32 +38,39 @@ body {
   letter-spacing: -0.01em;
 }
 
-/* Apple Custom Minimalist Scrollbar */
+input, textarea, select, button, code, pre {
+  font-family: var(--font-sans);
+}
+
+/* Custom Minimalist Scrollbar */
 ::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #000000;
+  background: rgba(15, 23, 42, 0.3);
 }
 ::-webkit-scrollbar-thumb {
-  background: #27272a;
+  background: rgba(255, 255, 255, 0.18);
   border-radius: 999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #3f3f46;
+  background: rgba(255, 255, 255, 0.3);
 }
 
-/* Apple Glass & Panel Components */
+/* Transparent Glassmorphism Panels */
 .glass-panel {
   background: var(--bg-card);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
   border: 1px solid var(--border-color);
-  border-radius: 14px;
-  transition: border-color 0.2s ease;
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.09);
+  transition: border-color 0.2s ease, background-color 0.2s ease;
 }
 
 .glass-panel:hover {
-  border-color: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.24);
 }
 
 /* Apple Buttons */
@@ -204,9 +218,11 @@ body {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
 }
 
-/* Apple Accordion / Collapsible */
+/* Glass Accordion / Collapsible */
 .collapsible-trigger {
-  background: var(--bg-card);
+  background: rgba(15, 23, 42, 0.42);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--border-color);
   border-radius: 12px;
   transition: all 0.2s ease;
@@ -214,13 +230,15 @@ body {
 }
 
 .collapsible-trigger:hover {
-  border-color: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.24);
   background: var(--bg-card-hover);
 }
 
-/* Apple KPI Monochrome Cards */
+/* Glass KPI Monochrome Cards */
 .kpi-card {
-  background: #0a0a0c;
+  background: rgba(15, 23, 42, 0.42);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
   border: 1px solid var(--border-color);
   border-radius: 14px;
   padding: 22px 24px;
@@ -231,19 +249,30 @@ body {
 }
 
 .kpi-card:hover {
-  border-color: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.24);
   transform: translateY(-2px);
 }
 
-/* Apple Auth Dialog */
+/* Glass Auth Dialog */
 .auth-box {
-  background: #09090b;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 20px;
-  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.9);
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
-/* Apple iMessage Minimalist Chat */
+/* Frosted Inner Subcard */
+.glass-subcard {
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+}
+
+/* iMessage Minimalist Chat */
 .chat-bubble-me {
   background: #ffffff;
   color: #000000;
@@ -252,20 +281,24 @@ body {
 }
 
 .chat-bubble-other {
-  background: #141416;
+  background: rgba(30, 41, 59, 0.55);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--border-color);
-  color: #f4f4f5;
+  color: #f8fafc;
   border-radius: 16px 16px 16px 4px;
 }
 
-/* Apple Terminal Window */
+/* Glass Terminal Window */
 .terminal-window {
-  background: #000000;
+  background: rgba(2, 6, 23, 0.55);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--border-color);
   border-radius: 10px;
   padding: 14px;
-  font-family: var(--font-mono);
-  font-size: 0.78rem;
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
   max-height: 220px;
   overflow-y: auto;
 }
@@ -330,4 +363,232 @@ body {
 
 .spin, .animate-spin {
   animation: spin 1s linear infinite;
+}
+
+/* =========================================================
+   INTERNAL WORKSPACE: COMPACT TRANSPARENT WHITE GLASSMORPHISM
+   Calm, glare-free cool mist backdrop + frosted white glass
+   ========================================================= */
+.workspace-light-glass {
+  --bg-primary: #e6ecf4;
+  --bg-secondary: rgba(255, 255, 255, 0.45);
+  --bg-card: rgba(255, 255, 255, 0.56);
+  --bg-card-hover: rgba(255, 255, 255, 0.74);
+  --border-color: rgba(15, 23, 42, 0.09);
+  --border-focus: rgba(2, 132, 199, 0.45);
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
+  --text-subtle: #94a3b8;
+  --accent-blue: #0284c7;
+  --accent-purple: #7c3aed;
+  --accent-amber: #d97706;
+  --accent-rose: #e11d48;
+
+  min-height: 100vh;
+  width: 100%;
+  background-color: #e4ebf3;
+  background-image:
+    radial-gradient(ellipse at 10% 6%, rgba(125, 211, 252, 0.34), transparent 44%),
+    radial-gradient(ellipse at 88% 12%, rgba(196, 181, 253, 0.30), transparent 46%),
+    radial-gradient(ellipse at 52% 94%, rgba(167, 243, 208, 0.28), transparent 50%);
+  background-attachment: fixed;
+  color: #0f172a;
+}
+
+.workspace-light-glass ::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.35);
+}
+.workspace-light-glass ::-webkit-scrollbar-thumb {
+  background: rgba(15, 23, 42, 0.16);
+}
+.workspace-light-glass ::-webkit-scrollbar-thumb:hover {
+  background: rgba(15, 23, 42, 0.28);
+}
+
+.workspace-light-glass .glass-panel,
+.workspace-light-glass .collapsible-trigger,
+.workspace-light-glass .kpi-card {
+  background: rgba(255, 255, 255, 0.56);
+  backdrop-filter: blur(22px) saturate(160%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  border-radius: 14px;
+  box-shadow: 0 6px 24px rgba(15, 23, 42, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.92);
+  color: #0f172a;
+}
+
+.workspace-light-glass .glass-panel:hover,
+.workspace-light-glass .collapsible-trigger:hover {
+  background: rgba(255, 255, 255, 0.68);
+  border-color: rgba(255, 255, 255, 0.98);
+}
+
+.workspace-light-glass .auth-box {
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(28px) saturate(170%);
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  border-radius: 18px;
+  box-shadow: 0 24px 50px rgba(15, 23, 42, 0.14), inset 0 1px 0 #ffffff;
+  color: #0f172a;
+}
+
+.workspace-light-glass .glass-subcard {
+  background: rgba(255, 255, 255, 0.44);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  border-radius: 10px;
+  color: #0f172a;
+}
+
+.workspace-light-glass .glass-input {
+  background: rgba(255, 255, 255, 0.68);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  color: #0f172a;
+  border-radius: 9px;
+  outline: none;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.workspace-light-glass .glass-input:focus {
+  background: rgba(255, 255, 255, 0.88);
+  border-color: #0284c7;
+}
+
+.workspace-light-glass .glass-input::placeholder {
+  color: #64748b;
+}
+
+.workspace-light-glass .btn-primary {
+  background: #0f172a;
+  color: #ffffff;
+  border: 1px solid #0f172a;
+  border-radius: 9999px;
+  padding: 8px 16px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+}
+
+.workspace-light-glass .btn-primary:hover:not(:disabled) {
+  background: #1e293b;
+  border-color: #1e293b;
+}
+
+.workspace-light-glass .btn-secondary {
+  background: rgba(255, 255, 255, 0.56);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #1e293b;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 9999px;
+  padding: 7px 14px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.workspace-light-glass .btn-secondary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.85);
+  border-color: rgba(15, 23, 42, 0.22);
+}
+
+.workspace-light-glass .nav-tab-btn {
+  color: #475569;
+  padding: 6px 14px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.workspace-light-glass .nav-tab-btn:hover {
+  color: #0f172a;
+}
+
+.workspace-light-glass .nav-tab-btn.active {
+  background: rgba(255, 255, 255, 0.90);
+  color: #0f172a;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.08);
+}
+
+.workspace-light-glass .badge {
+  background: rgba(255, 255, 255, 0.68);
+  border: 1px solid rgba(15, 23, 42, 0.10);
+  color: #1e293b;
+}
+
+.workspace-light-glass .badge-success {
+  background: rgba(16, 185, 129, 0.14);
+  border-color: rgba(16, 185, 129, 0.30);
+  color: #065f46;
+}
+
+.workspace-light-glass .badge-warning {
+  background: rgba(245, 158, 11, 0.14);
+  border-color: rgba(245, 158, 11, 0.30);
+  color: #92400e;
+}
+
+.workspace-light-glass .badge-error {
+  background: rgba(244, 63, 94, 0.12);
+  border-color: rgba(244, 63, 94, 0.28);
+  color: #9f1239;
+}
+
+.workspace-light-glass .badge-info {
+  background: rgba(2, 132, 199, 0.12);
+  border-color: rgba(2, 132, 199, 0.28);
+  color: #075985;
+}
+
+.workspace-light-glass .pulse-dot-green {
+  background-color: #10b981;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.45);
+}
+
+.workspace-light-glass .custom-table th {
+  color: #475569;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.10);
+  background: rgba(255, 255, 255, 0.42);
+  padding: 9px 12px;
+  font-size: 0.72rem;
+}
+
+.workspace-light-glass .custom-table td {
+  color: #1e293b;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  padding: 8px 12px;
+  font-size: 0.8rem;
+}
+
+.workspace-light-glass .custom-table tr:hover td {
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.workspace-light-glass .terminal-window {
+  background: rgba(255, 255, 255, 0.50);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  color: #1e293b;
+  max-height: 165px;
+  padding: 10px 12px;
+  font-size: 0.76rem;
+}
+
+.workspace-light-glass .log-time { color: #64748b; }
+.workspace-light-glass .tag-INFO { color: #475569; }
+.workspace-light-glass .tag-SUCCESS { color: #047857; font-weight: 700; }
+.workspace-light-glass .tag-WARN { color: #b45309; }
+.workspace-light-glass .tag-ERROR { color: #be123c; }
+.workspace-light-glass .tag-GEMINI { color: #6d28d9; font-weight: 700; }
+
+.workspace-light-glass .chat-bubble-me {
+  background: #0f172a;
+  color: #ffffff;
+}
+
+.workspace-light-glass .chat-bubble-other {
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.92);
+  color: #0f172a;
 }
