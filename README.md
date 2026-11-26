@@ -37,6 +37,8 @@
   <a href="#-how-to-use-the-whole-system-complete-manual"><b>📖 Operator Manual</b></a> •
   <a href="#-security-capabilities--threat-protection"><b>🛡️ Security Blueprint</b></a> •
   <a href="#-redis-telemetry--grafana-observability"><b>📊 Observability</b></a> •
+  <a href="#-evaluation-metrics--quality-benchmarks"><b>🧪 Evaluation Metrics</b></a> •
+  <a href="#-overall-prompting-architecture"><b>🧠 Prompting Architecture</b></a> •
   <a href="#-api-endpoints-reference"><b>🔌 API Reference</b></a>
 </p>
 
@@ -78,6 +80,25 @@ Watch the complete autonomous document extraction lifecycle, live extraction tel
 
 ---
 
+## 🌐 Live Vercel Deployment & Page Preview
+
+**Live Production URL:** **[https://ocr-project-puce.vercel.app](https://ocr-project-puce.vercel.app)**
+
+<div align="center">
+  <p>
+    <a href="https://ocr-project-puce.vercel.app" target="_blank">
+      <img src="https://img.shields.io/badge/Open%20Live%20Production%20App-ocr--project--puce.vercel.app-000000?style=for-the-badge&logo=vercel&logoColor=white" alt="Open Live App on Vercel" />
+    </a>
+  </p>
+  <a href="https://ocr-project-puce.vercel.app" target="_blank" title="Open Live CG-OCR App on Vercel">
+    <img src="docs/screenshots/11_vercel_production_workspace.jpg" alt="CG-OCR Live Vercel Production Preview (ocr-project-puce.vercel.app)" width="95%" style="border-radius: 12px; border: 1px solid rgba(15,23,42,0.12); box-shadow: 0 12px 35px rgba(15,23,42,0.12);" />
+  </a>
+  <br/>
+  <sub><i>Click the preview above to open the live hosted workspace at <a href="https://ocr-project-puce.vercel.app">https://ocr-project-puce.vercel.app</a>.</i></sub>
+</div>
+
+---
+
 ## 📸 Interactive UI Gallery & Screenshot Walkthrough
 
 Explore the live functional modules of the CG-OCR Enterprise platform below. Each screenshot shows the actual dark minimalist landing portal and the compact transparent white glassmorphism internal workspace.
@@ -93,63 +114,35 @@ Explore the live functional modules of the CG-OCR Enterprise platform below. Eac
 
 <br/><br/>
 
-### 2. Employee Login System
-*Zero-trust authentication gateway protected by automated Anti-Bot OTP Guard. Enforces email whitelist validation and human verification checks before initiating token generation.*
-
-<img src="docs/screenshots/02_login_system.png" alt="CG-OCR Employee Sign-In Portal" width="65%" style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 12px 35px rgba(0,0,0,0.85);" />
-
-<br/><br/>
-
-### 3. OTP Verification Guard
-*Cryptographic one-time password verification dialog. 6-digit one-time codes are generated on the server with a 300-second TTL and dispatched exclusively via authenticated TLS SMTP to the user's Gmail inbox with zero client-side leakage.*
-
-<img src="docs/screenshots/03_otp_verification.png" alt="Anti-Bot OTP Verification Screen" width="65%" style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 12px 35px rgba(0,0,0,0.85);" />
-
-<br/><br/>
-
-### 4. White Glassmorphism Workspace & Multi-Format Upload Hub
+### 2. White Glassmorphism Workspace & Multi-Format Upload Hub
 *Compact transparent white glassmorphism workspace (`Inter` font) featuring drag-and-drop ingestion for PDFs, images, XLSX, CSV, and TXT alongside live Triage &amp; Queue telemetry (`20 / pass` batching, Gemini `&lt;85%` standby).*
 
 <img src="docs/screenshots/04_upload_section.jpg" alt="White Glassmorphism Document & Spreadsheet Upload Workspace" width="95%" style="border-radius: 12px; border: 1px solid rgba(15,23,42,0.12); box-shadow: 0 12px 35px rgba(15,23,42,0.12);" />
 
 <br/><br/>
 
-### 5. Live OCR Logs & 1-Call AI Summary & Q&A
+### 3. Live OCR Logs & 1-Call AI Summary & Q&A
 *End-to-end extraction console showing real-time OpenCV + `UNLIMITED_OCR` execution logs, 1-click export controls (`Extract Invoices`, `Excel`, `Save DB`, `AI Summary &amp; Q&amp;A`, `JSON`, `ZIP`), and single-call Gemini executive summaries with mathematical discrepancy detection and interactive Q&amp;A.*
 
 <img src="docs/screenshots/10_ai_summary_qa.jpg" alt="Live Extraction Telemetry and 1-Call AI Summary & Q&A" width="95%" style="border-radius: 12px; border: 1px solid rgba(15,23,42,0.12); box-shadow: 0 12px 35px rgba(15,23,42,0.12);" />
 
 <br/><br/>
 
-### 6. OCR Engine & Sliding Window Terminal
-*Detailed console view tracking the 20-element sliding window batch processor, GPU model allocation, and confidence routing.*
-
-<img src="docs/screenshots/06_ocr_section.png" alt="OCR Execution Engine & Sliding Window Terminal" width="95%" style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 12px 35px rgba(0,0,0,0.85);" />
-
-<br/><br/>
-
-### 7. Financial Invoice Extraction & Mathematical Audit Section
-*Task 3 financial intelligence engine extracting structured invoices (e.g. invoice `#CHL-2026-0100`, Meghna Trading Corporation). Performs automated mathematical audits ($\text{Subtotal} + \text{Tax} = \text{Total}$) with 1-click Excel, Supabase, JSON, and ZIP export.*
-
-<img src="docs/screenshots/07_extraction_section.jpg" alt="Invoice Extraction and Financial Validation Audit" width="95%" style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 12px 35px rgba(0,0,0,0.85);" />
-
-<br/><br/>
-
-### 8. Real-Time Infrastructure Telemetry, Redis, Grafana & Token Cost Hub
+### 4. Real-Time Infrastructure Telemetry, Redis, Grafana & Token Cost Hub
 *Compact white-glassmorphism observability suite displaying live API/GPU/Gemini/DB/Redis/Grafana health, real HTTP request RPS &amp; P95 latency, measured `psutil` CPU/memory curves, live Redis keyspace diagnostics, Prometheus scrape snippet, and SQLite-persisted **API Calls &amp; Token Cost** tracking.*
 
 <img src="docs/screenshots/09_infrastructure_observability.jpg" alt="Real-Time Redis, Grafana Telemetry & API Token Cost Hub" width="95%" style="border-radius: 12px; border: 1px solid rgba(15,23,42,0.12); box-shadow: 0 12px 35px rgba(15,23,42,0.12);" />
 
 <br/><br/>
 
-### 9. Enterprise Security Audit & Blocked Intrusion Table
-*Real-time intrusion monitor capturing unauthorized login attempts, resolving external public WAN IP addresses (`103.196.235.141`), Geo-location (`Dhaka, BD`), and hardware user-agent fingerprints:*
+### 5. Enterprise Security Audit & Login Intrusion Alert Table
+*Real-time security alert table capturing unauthorized login attempts, resolving external public WAN IP addresses (`103.196.235.141`), Geo-location (`Dhaka, BD`), and hardware user-agent fingerprints:*
 
 <img src="docs/screenshots/05b_security_threat_table.png" alt="Flagged Unauthorized Login Attempts Incident Table" width="95%" style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 12px 35px rgba(0,0,0,0.85);" />
 
 <br/><br/>
 
-### 10. Team Collaboration & Workspace Chat
+### 6. Team Collaboration & Workspace Chat
 *White-glassmorphism persistent team collaboration channel showing online staff presence, quick audit status pills (`Batch processed cleanly`, `Invoice math verified: MATCH`, `Synced to Supabase DB`), and real-time messaging.*
 
 <img src="docs/screenshots/08_team_chat_section.jpg" alt="White Glassmorphism Team Collaboration & Chat" width="95%" style="border-radius: 12px; border: 1px solid rgba(15,23,42,0.12); box-shadow: 0 12px 35px rgba(15,23,42,0.12);" />
@@ -602,25 +595,6 @@ curl -X POST "https://ocr-project-puce.vercel.app/v1/extract" \
 
 ---
 
-## 🌐 Live Vercel Deployment & Page Preview
-
-**Live Production URL:** **[https://ocr-project-puce.vercel.app](https://ocr-project-puce.vercel.app)**
-
-<div align="center">
-  <p>
-    <a href="https://ocr-project-puce.vercel.app" target="_blank">
-      <img src="https://img.shields.io/badge/Open%20Live%20Production%20App-ocr--project--puce.vercel.app-000000?style=for-the-badge&logo=vercel&logoColor=white" alt="Open Live App on Vercel" />
-    </a>
-  </p>
-  <a href="https://ocr-project-puce.vercel.app" target="_blank" title="Open Live CG-OCR App on Vercel">
-    <img src="docs/screenshots/11_vercel_production_workspace.jpg" alt="CG-OCR Live Vercel Production Preview (ocr-project-puce.vercel.app)" width="95%" style="border-radius: 12px; border: 1px solid rgba(15,23,42,0.12); box-shadow: 0 12px 35px rgba(15,23,42,0.12);" />
-  </a>
-  <br/>
-  <sub><i>Click the preview above to open the live hosted workspace at <a href="https://ocr-project-puce.vercel.app">https://ocr-project-puce.vercel.app</a>.</i></sub>
-</div>
-
----
-
 ## ⚡ Pro-Level Production Speed & Scaling Upgrades
 
 To scale **CG-OCR** from single-node workstation throughput to high-concurrency production workloads, upgrade the following pipeline stages:
@@ -656,6 +630,88 @@ To scale **CG-OCR** from single-node workstation throughput to high-concurrency 
 ```
 
 </details>
+
+---
+
+## 📊 Evaluation Metrics & Quality Benchmarks
+
+CG-OCR evaluates pipeline performance across four measurable dimensions implemented directly in code (`validator.py`, `orchestrator.py`, `invoice_extractor.py`, `usage_tracker.py`, and `api_server.py`):
+
+### 1. Document Ingestion & OCR Routing Gates
+| Metric / Gate | Target / Threshold | Code Enforcement | Purpose |
+| :--- | :--- | :--- | :--- |
+| **Confidence Escalation Threshold** | `< 85%` (`0.85`) | `careguide/orchestrator.py` | Automatically escalates the entire batch to Gemini Vision AI whenever GPU OCR confidence falls below `0.85`. |
+| **Multilingual / Corruption Gate** | Bangla Unicode (`\u0980–\u09FF`) or empty/error text | `careguide/ocr_client.py`, `orchestrator.py` | Detects Bengali script or OCR failure strings immediately and routes packets to bilingual Gemini Vision AI. |
+| **Decompression Bomb Ceiling** | `≤ 100,000,000` pixels | `careguide/validator.py` (`Image.MAX_IMAGE_PIXELS`) | Blocks oversized/malicious raster payloads before OpenCV preprocessing. |
+| **Tabular Fast-Path Latency** | `< 15 ms` (`0` tokens) | `XLSX` / `XLS` / `CSV` / `TSV` / `TXT` parser | Guarantees deterministic local parsing with zero LLM token burn on structured sheets. |
+
+### 2. Financial Audit & Mathematical Consistency Metrics (`Task 3`)
+| Validation Metric | Formula / Tolerance | Severity & Status Flag |
+| :--- | :--- | :--- |
+| **Grand Total Reconciliation** | `| (Subtotal + Tax) - Total | ≤ 0.05` | `ERROR` → `ARITHMETIC_MISMATCH_TOTAL` (`CRITICAL_ERROR`) |
+| **Subtotal vs. Total Divergence** | `| Subtotal - Total | ≤ 0.05` (when `Tax` is null) | `WARNING` → `SUBTOTAL_TOTAL_DIVERGENCE` (`NEEDS_REVIEW`) |
+| **Line-Item Sum Consistency** | `| Σ(Line Item Amounts) - Subtotal/Total | ≤ 0.10` | `ERROR` → `LINE_ITEMS_SUM_MISMATCH` (`CRITICAL_ERROR`) |
+| **Unit Arithmetic Accuracy** | `| (Quantity × Unit Price) - Amount | ≤ 0.05` | `WARNING` → `LINE_ITEM_UNIT_MATH` (`NEEDS_REVIEW`) |
+| **Cross-File Duplicate Detection** | Unique `(supplier_name, invoice_number)` pair | `ERROR` → `DUPLICATE_INVOICE` (`CRITICAL_ERROR`) |
+
+### 3. System Observability & Token Economics
+| Metric | Source | Tracked Output |
+| :--- | :--- | :--- |
+| **HTTP Throughput (`avg_rps`)** | `RealTimeTelemetryRecorder` (`60s` sliding window, `5s` buckets) | Real `requests / second` and total `60s` request volume |
+| **Tail Latency (`P95 ms`)** | Sorted recorded HTTP durations per bucket & window | `95th` percentile end-to-end API latency (`ms`) |
+| **HTTP Error Rate (`%`)** | `(4xx + 5xx responses) / total requests × 100` | Real error rate percentage + active `in_flight` count |
+| **Redis Cache Efficiency** | Live `INFO` (`keyspace_hits`, `keyspace_misses`, `PING`) | `hit_rate_percent`, `ping_latency_ms`, `ops_per_sec`, keyspace TTLs |
+| **LLM Token & USD Cost** | SQLite `UsageTracker` from Gemini `usageMetadata` | `promptTokenCount`, `candidatesTokenCount`, estimated USD cost & call reliability |
+
+---
+
+## 🧠 Overall Prompting Architecture
+
+CG-OCR follows a **Hybrid Prompting + Deterministic Verification Architecture**: deterministic parsers handle spreadsheets (`0` prompts), vision OCR runs GPU-first on PDFs/images, and **three specialized, low-temperature Gemini prompt engines** handle visual fallback, structured financial JSON extraction, and unified document Q&A—all backed by code-level validation so LLM outputs are never trusted blindly.
+
+```mermaid
+flowchart TB
+    IN["Extracted / Rendered Content"] --> ROUTE{"Task Stage"}
+
+    ROUTE -->|"<85% Conf / Bangla / Re-OCR<br/>(Up to 20 Images / Call)"| P1["Prompt Engine 1: Packet Vision OCR<br/>careguide/gemini_fallback.py<br/>temp=0.1 • Delimiter Tags"]
+    P1 --> V1["Regex & Index Demultiplexer<br/>Zero cross-page text bleed"]
+
+    ROUTE -->|"Structured Invoice Audit<br/>(Text / Tabular Chunks)"| P2["Prompt Engine 2: Strict JSON Extractor<br/>careguide/invoice_extractor.py<br/>temp=0.0 • response_mime_type=application/json"]
+    P2 --> V2["Pydantic Schema + Task 3 Math Guard<br/>Tolerance ≤ 0.05 & Duplicate Shield"]
+
+    ROUTE -->|"Executive Summary or Question<br/>(Max 120k Context Chars)"| P3["Prompt Engine 3: 1-Call Analyzer<br/>careguide/doc_analyzer.py<br/>temp=0.1 • Strictly 1 Call / Query"]
+    P3 --> V3["Inline Source Citations<br/>[filename, Page X] / [Sheet, Row Y]"]
+
+    P1 & P2 & P3 --> CASCADE["Resilient Model Cascade<br/>1. google-genai SDK → 2. Direct REST v1beta<br/>Models: gemini-3-flash-preview → 3.1-flash-lite → 3.5-flash → flash-latest"]
+    CASCADE --> TRACK["UsageTracker (SQLite + /metrics)<br/>Records real usageMetadata tokens & USD cost"]
+```
+
+### Prompt Design Patterns Across Modules
+
+1. **Packet-Multiplexed Vision OCR (`careguide/gemini_fallback.py` → `build_packet_prompt`)**
+   - **Goal**: Recover `<85%` confidence scans and complex Bangla conjuncts (`যুক্তবর্ণ`, `কার/ফলা`) without paying 1 HTTP round-trip per page.
+   - **Structure**: Attaches up to **20 preprocessed JPEG images** paired with indexed text headers and enforces strict boundary markers:
+     ```text
+     === START ELEMENT [i/n]: {element_id} ===
+     [Transcribed Markdown / tables for this element]
+     === END ELEMENT [i/n]: {element_id} ===
+     ```
+   - **Post-Validation**: `demultiplex_packet_response()` splits and maps sections deterministically by ID and index back to individual pages.
+
+2. **Schema-Locked Financial & Bilingual Extractor (`careguide/invoice_extractor.py` → `_build_extraction_prompt`)**
+   - **Goal**: Guarantee machine-parseable financial records from English, Bengali, or mixed invoices with zero hallucinated numbers.
+   - **Key Controls**:
+     - `temperature = 0.0` + `response_mime_type = "application/json"`.
+     - Explicit **anti-hallucination rule**: missing or illegible fields **must** be emitted as `null`, never estimated.
+     - Built-in **Bangla Accounting Glossary**: maps `চালান নং`/`বিল নং` → `invoice_number`, `তারিখ` → `invoice_date`, `সরবরাহকারী`/`মেসার্স` → `supplier_name`, `উপমোট` → `subtotal`, `ভ্যাট`/`মূসক` → `tax`, `সর্বমোট` → `total`, `টাকা`/`৳` → `'BDT'`, and converts Bengali digits (`০–৯`) to Arabic floats while keeping legal descriptions in native Bangla text.
+     - Enforces **15 RPM Free-Tier pacing** (`2.5s` cooldown between chunks) and feeds output directly into Task 3 arithmetic checks.
+
+3. **Unified 1-Call Summary & Grounded Q&A (`careguide/doc_analyzer.py` → `_build_prompt`)**
+   - **Goal**: Summarize multi-page PDFs or 1,000-row CSV/Excel datasets—or answer targeted operator questions—in **strictly 1 Gemini API call**.
+   - **Context Assembly (`build_context`)**: Serializes every extracted page (`=== DOCUMENT: file | Page X ===`) and spreadsheet (`=== SPREADSHEET: file | Sheet 'Name' ===`) up to `120,000` characters.
+   - **Grounding Strategy**:
+     - *Summary mode* enforces 4 deterministic sections (*Document Overview*, *Key Facts, Entities & Figures*, *Main Takeaways*, *Gaps or Extraction Notes*).
+     - *Q&A mode* enforces inline provenance tags (`[filename, Page X]` or `[Sheet 'Name', Row Y]`) and explicitly instructs the model to state when an answer is absent rather than guessing.
 
 ---
 
