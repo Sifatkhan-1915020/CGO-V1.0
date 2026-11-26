@@ -1438,24 +1438,24 @@ export default function App() {
   // Render Landing Page if user is not authenticated
   if (!currentUser) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '36px 32px', maxWidth: '1240px', margin: '0 auto', backgroundColor: '#000000', color: '#ffffff' }}>
+      <div className="landing-shell">
         {/* APPLE MINIMALIST TOP BAR */}
-        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <header className="landing-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <Layers size={18} color="#000000" />
             </div>
             <div>
               <span style={{ fontSize: '1.25rem', fontWeight: 800, letterSpacing: '-0.03em', color: '#ffffff' }}>
                 CG-OCR
               </span>
-              <span style={{ marginLeft: '8px', fontSize: '0.72rem', color: '#71717a', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>
+              <span className="landing-brand-sub" style={{ marginLeft: '8px', fontSize: '0.72rem', color: '#71717a', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>
                 Enterprise Document Intelligence
               </span>
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div className="landing-actions">
             <a
               href="/docs"
               target="_blank"
@@ -1486,7 +1486,7 @@ export default function App() {
         </header>
 
         {/* HERO SECTION */}
-        <div style={{ margin: '80px auto 50px auto', textAlign: 'center', maxWidth: '880px' }}>
+        <div className="landing-hero">
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '5px 14px', borderRadius: '9999px', background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.12)', marginBottom: '24px' }}>
             <Sparkles size={13} color="#ffffff" />
             <span style={{ fontSize: '0.76rem', color: '#d4d4d8', fontWeight: 500, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
@@ -1494,11 +1494,11 @@ export default function App() {
             </span>
           </div>
 
-          <h1 style={{ fontSize: '4.2rem', fontWeight: 800, lineHeight: 1.06, letterSpacing: '-0.04em', marginBottom: '20px', color: '#ffffff' }}>
+          <h1 className="landing-title">
             CG-OCR
           </h1>
 
-          <p style={{ fontSize: '1.25rem', fontWeight: 600, color: '#f4f4f5', letterSpacing: '-0.02em', marginBottom: '16px' }}>
+          <p className="landing-subtitle">
             Autonomous Document, Spreadsheet & Invoice Processing
           </p>
 
@@ -1506,7 +1506,7 @@ export default function App() {
             Dual-routing engine engineered for high throughput. Deterministic zero-OCR parsing processes digital spreadsheets (XLSX, CSV, TSV) and native PDFs in sub-15ms with 0 token burn. Scanned media routes through GPU-accelerated OCR, with automatic Gemini Vision AI fallback for low-confidence (&lt;85%) and handwritten Bangla script. Backed by deterministic Task 3 financial auditing, duplicate detection, and live Supabase cloud synchronization.
           </p>
 
-          <div style={{ display: 'flex', justifyContent: 'center', gap: '14px', flexWrap: 'wrap' }}>
+          <div className="landing-cta-group" style={{ display: 'flex', justifyContent: 'center', gap: '14px', flexWrap: 'wrap' }}>
             <button
               onClick={() => { setAuthModal('employee'); setAuthError(''); setAuthNotice(''); setOtpStep('email'); }}
               className="btn-primary"
@@ -1527,7 +1527,7 @@ export default function App() {
         </div>
 
         {/* APPLE MONOCHROME PERFORMANCE KPI CARDS */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', margin: '30px 0 60px 0' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: '16px', margin: '30px 0 60px 0' }}>
           <div className="kpi-card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#71717a', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Throughput</span>
@@ -1741,11 +1741,11 @@ export default function App() {
   // --- Authenticated Workspace View (Transparent White Glassmorphism) ---
   return (
     <div className="workspace-light-glass">
-    <div style={{ maxWidth: '1380px', margin: '0 auto', padding: '14px 20px' }}>
+    <div className="workspace-container">
       {/* COMPACT TOP NAVIGATION BAR */}
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '12px' }}>
+      <header className="workspace-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 10px rgba(15, 23, 42, 0.12)' }}>
+          <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 10px rgba(15, 23, 42, 0.12)', flexShrink: 0 }}>
             <Layers size={18} color="#ffffff" />
           </div>
           <div>
@@ -1759,7 +1759,7 @@ export default function App() {
         </div>
 
         {/* 3 TABS SWITCHER */}
-        <div style={{ display: 'flex', gap: '4px', background: 'rgba(255, 255, 255, 0.45)', backdropFilter: 'blur(16px)', padding: '4px', borderRadius: '9999px', border: '1px solid rgba(255, 255, 255, 0.8)' }}>
+        <div className="workspace-tabs" style={{ background: 'rgba(255, 255, 255, 0.45)', backdropFilter: 'blur(16px)', padding: '4px', borderRadius: '9999px', border: '1px solid rgba(255, 255, 255, 0.8)' }}>
           <button
             onClick={() => setMainTab('ocr')}
             className={`nav-tab-btn ${mainTab === 'ocr' ? 'active' : ''}`}
@@ -1790,7 +1790,7 @@ export default function App() {
         </div>
 
         {/* USER CONTROLS */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+        <div className="workspace-user-controls">
           {currentUser?.role === 'ADMIN' && (
             <button
               onClick={() => { fetchEmployees(); setShowAdminModal(true); }}
@@ -1953,7 +1953,7 @@ export default function App() {
           {/* Pros & Cons Compact Comparison Card */}
           {showTunnelComparison && (
             <div className="glass-subcard" style={{ marginBottom: '14px', padding: '12px 14px', fontSize: '0.78rem', color: '#334155' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))', gap: '12px' }}>
                 <div style={{ padding: '10px 12px', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
                   <div style={{ color: '#047857', fontWeight: 700, marginBottom: '4px' }}>Tailscale WireGuard Mesh</div>
                   <div><strong style={{ color: '#047857' }}>Pros:</strong> Private Tailnet, no 100s timeout, direct P2P speed, static IP.</div>
@@ -1968,7 +1968,7 @@ export default function App() {
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 0.8fr', gap: '12px', alignItems: 'end' }}>
+          <div className="settings-tunnel-grid">
             <div>
               <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>
                 {tunnelType === 'tailscale' ? 'Tailscale Node URL' : tunnelType === 'local' ? 'Local GPU URL' : 'Cloudflare Tunnel URL'}
@@ -2023,7 +2023,7 @@ export default function App() {
           </div>
 
           {/* Compact Gemini / Supabase / Dev API Row */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px', marginTop: '12px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: '12px', marginTop: '12px' }}>
             {/* Gemini Key */}
             <div className="glass-subcard" style={{ padding: '12px 14px', borderColor: 'rgba(124, 58, 237, 0.22)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
@@ -2955,7 +2955,7 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1.15fr 1.85fr', gap: '14px', alignItems: 'start' }}>
+                  <div className="invoice-split-grid">
                     {(() => {
                       const allInvs = invoiceResults.invoices || [];
                       const filteredInvs = allInvs.map((inv, originalIdx) => ({ inv, originalIdx })).filter(({ inv }) => {
@@ -3090,7 +3090,7 @@ export default function App() {
                             </div>
                           )}
 
-                          <div className="glass-subcard" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', padding: '10px 12px', marginBottom: '12px' }}>
+                          <div className="glass-subcard invoice-meta-grid" style={{ padding: '10px 12px', marginBottom: '12px' }}>
                             <div>
                               <span style={{ fontSize: '0.68rem', color: '#64748b', display: 'block', fontWeight: 700 }}>SUPPLIER</span>
                               <span style={{ fontSize: '0.84rem', fontWeight: 600, color: currentInv.supplier_name ? '#0f172a' : '#be123c' }}>{currentInv.supplier_name || 'Missing'}</span>
@@ -3109,7 +3109,7 @@ export default function App() {
                             </div>
                           </div>
 
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '12px' }}>
+                          <div className="invoice-totals-grid" style={{ marginBottom: '12px' }}>
                             <div className="glass-subcard" style={{ padding: '8px 12px' }}>
                               <span style={{ fontSize: '0.68rem', color: '#64748b', display: 'block', fontWeight: 700 }}>SUBTOTAL</span>
                               <span style={{ fontSize: '0.94rem', fontWeight: 700, color: '#0f172a' }}>{currentInv.subtotal != null ? `${currentInv.currency || ''} ${Number(currentInv.subtotal).toFixed(2)}` : '—'}</span>
@@ -3127,7 +3127,7 @@ export default function App() {
                           <div style={{ marginBottom: '10px' }}>
                             <h4 style={{ fontSize: '0.84rem', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>Line Items ({currentInv.line_items?.length || 0})</h4>
                             {currentInv.line_items && currentInv.line_items.length > 0 ? (
-                              <div className="glass-subcard" style={{ maxHeight: '210px', overflowY: 'auto' }}>
+                              <div className="glass-subcard table-scroll-wrap" style={{ maxHeight: '210px', overflowY: 'auto' }}>
                                 <table className="custom-table" style={{ fontSize: '0.78rem' }}>
                                   <thead>
                                     <tr>
@@ -3209,7 +3209,7 @@ export default function App() {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '14px', alignItems: 'start' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))', gap: '14px', alignItems: 'start' }}>
                 {/* Summary Card */}
                 <div className="glass-subcard" style={{ padding: '16px', minHeight: '260px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '12px' }}>
                   <div>
@@ -3278,7 +3278,7 @@ export default function App() {
                     ))}
                   </div>
 
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <div className="qa-input-row" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                     <input
                       type="text"
                       className="glass-input"
@@ -3519,7 +3519,7 @@ export default function App() {
               ))}
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '12px', marginBottom: '14px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))', gap: '12px', marginBottom: '14px' }}>
               <div className="glass-subcard" style={{ padding: '14px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                   <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#0f172a' }}>Real HTTP Throughput (RPS • 5s buckets)</span>
@@ -3595,7 +3595,7 @@ export default function App() {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '12px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))', gap: '12px' }}>
               <div className="glass-subcard" style={{ padding: '14px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                   <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#0f172a' }}>Live Redis Keyspace</span>
@@ -3714,7 +3714,7 @@ export default function App() {
           </div>
 
           {/* NOTIFICATIONS & VULNERABILITY MONITOR */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '14px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))', gap: '14px' }}>
             <div className="glass-panel" style={{ padding: '16px' }}>
               <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0f172a', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Info size={16} color="#0284c7" /> Pipeline Feed
@@ -3898,7 +3898,7 @@ export default function App() {
             ))}
           </div>
 
-          <form onSubmit={(e) => { e.preventDefault(); handleSendChatMessage(); }} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <form className="chat-input-form" onSubmit={(e) => { e.preventDefault(); handleSendChatMessage(); }} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <input
               type="text"
               className="glass-input"
@@ -3932,7 +3932,7 @@ export default function App() {
               Authorize emails allowed to sign in via OTP Guard.
             </p>
 
-            <form onSubmit={handleAddEmployee} style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
+            <form className="admin-add-form" onSubmit={handleAddEmployee} style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
               <input
                 type="email"
                 className="glass-input"
