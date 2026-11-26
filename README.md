@@ -12,8 +12,9 @@
 [![Redis](https://img.shields.io/badge/Redis-7.2_Telemetry-DC382D.svg?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io)
 [![Grafana](https://img.shields.io/badge/Grafana-Prometheus_OpenMetrics-F46800.svg?style=for-the-badge&logo=grafana&logoColor=white)](https://grafana.com)
 [![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL_Cloud-3ECF8E.svg?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com)
+[![Live App](https://img.shields.io/badge/Live_App-Vercel_Production-000000.svg?style=for-the-badge&logo=vercel&logoColor=white)](https://ocr-project-puce.vercel.app)
 [![Swagger](https://img.shields.io/badge/Swagger-OpenAPI_3.1-85EA2D.svg?style=for-the-badge&logo=swagger&logoColor=black)](https://ocr-project-puce.vercel.app/docs)
-[![Demo Video](https://img.shields.io/badge/Demo_Video-720p_HD-FF0000.svg?style=for-the-badge&logo=youtube&logoColor=white)](#-end-to-end-system-walkthrough-video-demo)
+[![Demo Video](https://img.shields.io/badge/Demo_Video-Google_Drive-FF0000.svg?style=for-the-badge&logo=googledrive&logoColor=white)](https://drive.google.com/file/d/1ZuUlA59I_N-pdlx0lLcJao4mQEenUikp/view?usp=sharing)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![UI Style](https://img.shields.io/badge/Design-White_Glassmorphism_%2B_Dark_Landing-0f172a.svg?style=for-the-badge&logo=react&logoColor=white)](https://github.com/Sifatkhan-1915020/CGO-V1.0)
 
@@ -29,6 +30,7 @@
 </p>
 
 <p align="center">
+  <a href="https://ocr-project-puce.vercel.app"><b>🌐 Live App (Vercel)</b></a> •
   <a href="#-end-to-end-system-walkthrough-video-demo"><b>🎬 Video Demo</b></a> •
   <a href="#-interactive-ui-gallery--screenshot-walkthrough"><b>📸 UI Screenshot Gallery</b></a> •
   <a href="#-system-architecture--functional-flows"><b>🏛️ System Architecture Flows</b></a> •
@@ -44,29 +46,31 @@
 
 ## 🎬 End-to-End System Walkthrough (Video Demo)
 
-Watch the complete autonomous document extraction lifecycle, live extraction telemetry, Task 3 mathematical invoice audit shield, in-app API key generation, and interactive Swagger UI portal in action:
+Watch the complete autonomous document extraction lifecycle, live extraction telemetry, Task 3 mathematical invoice audit shield, AI Summary & Q&A, and interactive Swagger UI portal in action:
 
 <div align="center">
 
-<video src="docs/demo/careguide_demo_walkthrough.mp4" controls width="95%" poster="docs/demo/thumbnail.jpg" style="max-width: 900px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 12px 35px rgba(0,0,0,0.85);">
-  <a href="docs/demo/careguide_demo_walkthrough.mp4">
-    <img src="docs/demo/thumbnail.jpg" alt="CareGuide Demo Walkthrough Video" width="95%" style="max-width: 900px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.15);" />
-  </a>
-</video>
+<a href="https://drive.google.com/file/d/1ZuUlA59I_N-pdlx0lLcJao4mQEenUikp/view?usp=sharing" target="_blank" title="Click to Watch CG-OCR Live System Demo Video on Google Drive">
+  <img src="docs/demo/video_placeholder.jpg" alt="Click to Watch CG-OCR Live System Demo Video" width="95%" style="max-width: 900px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.18); box-shadow: 0 12px 35px rgba(0,0,0,0.85);" />
+</a>
 
 <br/><br/>
 
 <p align="center">
-  <a href="docs/demo/careguide_demo_walkthrough.mp4">
-    <img src="https://img.shields.io/badge/▶%20Watch%20/%20Download%20Demo%20Video-careguide__demo__walkthrough.mp4-0066FF?style=for-the-badge&logo=quicktime&logoColor=white" alt="Watch Demo Video" />
+  <a href="https://ocr-project-puce.vercel.app" target="_blank">
+    <img src="https://img.shields.io/badge/🌐%20Launch%20Live%20App-ocr--project--puce.vercel.app-000000?style=for-the-badge&logo=vercel&logoColor=white" alt="Open Live Vercel App" />
   </a>
   &nbsp;
-  <a href="https://ocr-project-puce.vercel.app/docs">
+  <a href="https://drive.google.com/file/d/1ZuUlA59I_N-pdlx0lLcJao4mQEenUikp/view?usp=sharing" target="_blank">
+    <img src="https://img.shields.io/badge/▶%20Watch%20Full%20Demo%20Video-Google%20Drive%20HD-0066FF?style=for-the-badge&logo=googledrive&logoColor=white" alt="Watch Demo Video on Google Drive" />
+  </a>
+  &nbsp;
+  <a href="https://ocr-project-puce.vercel.app/docs" target="_blank">
     <img src="https://img.shields.io/badge/Interactive%20Swagger-Live%20API%20Portal-85EA2D?style=for-the-badge&logo=swagger&logoColor=black" alt="Live Swagger UI" />
   </a>
 </p>
 
-*Recorded in 720p HD (H.264 / 25 FPS) — covering Landing Page, Administrator Authentication, Batch Ingestion, Real-Time Telemetry Logs, Task 3 Audit Shield, In-App API Key Generation, and Swagger UI execution.*
+*Click the video player placeholder above to watch the full walkthrough on Google Drive — covering the Landing Page, OTP Guard Authentication, White Glassmorphism Workspace, Batch OCR Extraction, 1-Call AI Summary &amp; Q&amp;A, Redis/Grafana/Token Cost Telemetry, and Vercel Deployment.*
 
 </div>
 
@@ -76,14 +80,14 @@ Watch the complete autonomous document extraction lifecycle, live extraction tel
 
 ## 📸 Interactive UI Gallery & Screenshot Walkthrough
 
-Explore the live functional modules of the CG-OCR Enterprise platform below. Each section represents a key component of the end-to-end ingestion, authentication, processing, and auditing lifecycle.
+Explore the live functional modules of the CG-OCR Enterprise platform below. Each screenshot shows the actual dark minimalist landing portal and the compact transparent white glassmorphism internal workspace.
 
 <br/>
 
 <div align="center">
 
 ### 1. Landing Page & Performance Architecture
-*Apple-inspired dark minimalist command interface featuring real-time system metrics, dual-routing status, digital triage latency benchmarks (<15ms), and instant 1-click access.*
+*Apple-inspired dark minimalist command portal featuring throughput benchmarks (`85.4+ Pages/s`), `<0.4s` spreadsheet routing latency, `99.8%` deterministic precision, and zero-token parsing highlights.*
 
 <img src="docs/screenshots/01_landing_page.jpg" alt="CG-OCR Minimalist Landing Page" width="95%" style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 12px 35px rgba(0,0,0,0.85);" />
 
@@ -103,28 +107,22 @@ Explore the live functional modules of the CG-OCR Enterprise platform below. Eac
 
 <br/><br/>
 
-### 4. Multi-Format Document & Spreadsheet Upload Section
-*High-capacity drag-and-drop ingestion zone capable of batching up to 1,000 document pages and spreadsheets. Supports multi-page PDFs, TIFF, JPG, PNG, WEBP, and tabular datasets (XLSX, CSV, TSV).*
+### 4. White Glassmorphism Workspace & Multi-Format Upload Hub
+*Compact transparent white glassmorphism workspace (`Inter` font) featuring drag-and-drop ingestion for PDFs, images, XLSX, CSV, and TXT alongside live Triage &amp; Queue telemetry (`20 / pass` batching, Gemini `&lt;85%` standby).*
 
-<img src="docs/screenshots/04_upload_section.jpg" alt="Document & Spreadsheet Ingestion Queue" width="95%" style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 12px 35px rgba(0,0,0,0.85);" />
-
-<br/><br/>
-
-### 5. Enterprise Security Section & Real-Time Threat Tracking
-*Infrastructure health telemetry feed coupled with real-time audit logs of unauthorized login attempts, capturing external public WAN IP addresses (`103.196.235.141`), Geo-location (`Dhaka, BD`), and resolved hardware user-agent fingerprints.*
-
-<img src="docs/screenshots/05_security_section.jpg" alt="Security Health & Infrastructure Audit" width="95%" style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 12px 35px rgba(0,0,0,0.85);" />
-
-<br/>
-
-*Detailed view of the live threat monitoring table capturing blocked intrusion incidents:*
-
-<img src="docs/screenshots/05b_security_threat_table.png" alt="Flagged Unauthorized Login Attempts Incident Table" width="95%" style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 12px 35px rgba(0,0,0,0.85);" />
+<img src="docs/screenshots/04_upload_section.jpg" alt="White Glassmorphism Document & Spreadsheet Upload Workspace" width="95%" style="border-radius: 12px; border: 1px solid rgba(15,23,42,0.12); box-shadow: 0 12px 35px rgba(15,23,42,0.12);" />
 
 <br/><br/>
 
-### 6. OCR Engine & Sliding Window Processing Section
-*Live execution console and telemetry terminal showing the 20-element sliding window batch processor in action, GPU model allocation, and real-time execution logs.*
+### 5. Live OCR Logs & 1-Call AI Summary & Q&A
+*End-to-end extraction console showing real-time OpenCV + `UNLIMITED_OCR` execution logs, 1-click export controls (`Extract Invoices`, `Excel`, `Save DB`, `AI Summary &amp; Q&amp;A`, `JSON`, `ZIP`), and single-call Gemini executive summaries with mathematical discrepancy detection and interactive Q&amp;A.*
+
+<img src="docs/screenshots/10_ai_summary_qa.jpg" alt="Live Extraction Telemetry and 1-Call AI Summary & Q&A" width="95%" style="border-radius: 12px; border: 1px solid rgba(15,23,42,0.12); box-shadow: 0 12px 35px rgba(15,23,42,0.12);" />
+
+<br/><br/>
+
+### 6. OCR Engine & Sliding Window Terminal
+*Detailed console view tracking the 20-element sliding window batch processor, GPU model allocation, and confidence routing.*
 
 <img src="docs/screenshots/06_ocr_section.png" alt="OCR Execution Engine & Sliding Window Terminal" width="95%" style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 12px 35px rgba(0,0,0,0.85);" />
 
@@ -137,17 +135,24 @@ Explore the live functional modules of the CG-OCR Enterprise platform below. Eac
 
 <br/><br/>
 
-### 8. Team Collaboration & Workspace Chat Section
-*Integrated persistent team messaging channel allowing authenticated workspace operators, auditors, and administrators to communicate, share invoice audit notes, and collaborate in real time.*
+### 8. Real-Time Infrastructure Telemetry, Redis, Grafana & Token Cost Hub
+*Compact white-glassmorphism observability suite displaying live API/GPU/Gemini/DB/Redis/Grafana health, real HTTP request RPS &amp; P95 latency, measured `psutil` CPU/memory curves, live Redis keyspace diagnostics, Prometheus scrape snippet, and SQLite-persisted **API Calls &amp; Token Cost** tracking.*
 
-<img src="docs/screenshots/08_team_chat_section.jpg" alt="Authenticated Team Collaboration & Chat" width="95%" style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 12px 35px rgba(0,0,0,0.85);" />
+<img src="docs/screenshots/09_infrastructure_observability.jpg" alt="Real-Time Redis, Grafana Telemetry & API Token Cost Hub" width="95%" style="border-radius: 12px; border: 1px solid rgba(15,23,42,0.12); box-shadow: 0 12px 35px rgba(15,23,42,0.12);" />
 
 <br/><br/>
 
-### 9. Infrastructure Telemetry, Token Cost & Redis / Grafana Hub
-*Compact white-glassmorphism observability suite (`Inter` typography) showing real-time HTTP throughput (RPS), real P95 latency, `psutil` CPU/RSS curves, live Redis `INFO`/`SCAN` metrics, and SQLite-persisted Gemini **API Calls & Token Cost** telemetry.*
+### 9. Enterprise Security Audit & Blocked Intrusion Table
+*Real-time intrusion monitor capturing unauthorized login attempts, resolving external public WAN IP addresses (`103.196.235.141`), Geo-location (`Dhaka, BD`), and hardware user-agent fingerprints:*
 
-<img src="docs/screenshots/09_infrastructure_observability.jpg" alt="Grafana Telemetry & Redis Observability Hub" width="95%" style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 12px 35px rgba(0,0,0,0.85);" />
+<img src="docs/screenshots/05b_security_threat_table.png" alt="Flagged Unauthorized Login Attempts Incident Table" width="95%" style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 12px 35px rgba(0,0,0,0.85);" />
+
+<br/><br/>
+
+### 10. Team Collaboration & Workspace Chat
+*White-glassmorphism persistent team collaboration channel showing online staff presence, quick audit status pills (`Batch processed cleanly`, `Invoice math verified: MATCH`, `Synced to Supabase DB`), and real-time messaging.*
+
+<img src="docs/screenshots/08_team_chat_section.jpg" alt="White Glassmorphism Team Collaboration & Chat" width="95%" style="border-radius: 12px; border: 1px solid rgba(15,23,42,0.12); box-shadow: 0 12px 35px rgba(15,23,42,0.12);" />
 
 </div>
 
@@ -597,15 +602,22 @@ curl -X POST "https://ocr-project-puce.vercel.app/v1/extract" \
 
 ---
 
-## 🚢 Production Deployment to Vercel
+## 🌐 Live Vercel Deployment & Page Preview
 
-The frontend is optimized for continuous deployment on **Vercel**:
+**Live Production URL:** **[https://ocr-project-puce.vercel.app](https://ocr-project-puce.vercel.app)**
 
-1. Push your changes to GitHub: **`https://github.com/Sifatkhan-1915020/CGO-V1.0`**.
-2. Open **[vercel.com/new](https://vercel.com/new)** and import `CGO-V1.0`.
-3. Set **Root Directory** to `frontend` (Framework Preset: `Vite`).
-4. Add environment variables if required (`VITE_API_URL` pointing to your hosted FastAPI backend).
-5. Click **Deploy**. Vercel will build and assign an instant production URL with global CDN acceleration.
+<div align="center">
+  <p>
+    <a href="https://ocr-project-puce.vercel.app" target="_blank">
+      <img src="https://img.shields.io/badge/Open%20Live%20Production%20App-ocr--project--puce.vercel.app-000000?style=for-the-badge&logo=vercel&logoColor=white" alt="Open Live App on Vercel" />
+    </a>
+  </p>
+  <a href="https://ocr-project-puce.vercel.app" target="_blank" title="Open Live CG-OCR App on Vercel">
+    <img src="docs/screenshots/11_vercel_production_workspace.jpg" alt="CG-OCR Live Vercel Production Preview (ocr-project-puce.vercel.app)" width="95%" style="border-radius: 12px; border: 1px solid rgba(15,23,42,0.12); box-shadow: 0 12px 35px rgba(15,23,42,0.12);" />
+  </a>
+  <br/>
+  <sub><i>Click the preview above to open the live hosted workspace at <a href="https://ocr-project-puce.vercel.app">https://ocr-project-puce.vercel.app</a>.</i></sub>
+</div>
 
 ---
 
