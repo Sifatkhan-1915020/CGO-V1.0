@@ -609,6 +609,44 @@ The frontend is optimized for continuous deployment on **Vercel**:
 
 ---
 
+## ⚡ Pro-Level Production Speed & Scaling Upgrades
+
+To scale **CG-OCR** from single-node workstation throughput to high-concurrency production workloads, upgrade the following pipeline stages:
+
+| Layer | Current Baseline | Pro-Level Production Upgrade | Expected Impact |
+| :--- | :--- | :--- | :--- |
+| **1. PDF Rasterization & OpenCV** (`pdf_extractor.py`, `preprocessor.py`) | Sequential page rendering at `200 DPI` + standard `cv2`/PIL JPEG encode | Run `ProcessPoolExecutor` across CPU cores + `PyTurboJPEG` (`libjpeg-turbo`) + adaptive `150 DPI` triage before upscaling only flagged regions | **3–5× faster** CPU preprocessing per 100-page PDF |
+| **2. Page-Level Redis Deduplication** (`ocr_client.py`, `api_server.py`) | Redis caches session/rate-limit/telemetry keys | Hash every preprocessed page (`SHA-256`) and check `ocr:sha256:<hash>` in Redis before GPU or Gemini dispatch | **<1 ms** instant hit & **0 GPU/token cost** on recurring forms/templates |
+| **3. GPU OCR Serving** (Kaggle / Cloud Worker) | Single-node `baidu/Unlimited-OCR` endpoint over Tailscale/Cloudflare | Deploy continuous-batching inference (**vLLM / TensorRT-LLM / Triton**) on dedicated A10G/L4/H100 GPUs behind a multi-node Tailscale round-robin pool | **5–12× higher** page/sec throughput with zero Cloudflare `100s` proxy drops |
+| **4. Async Fan-Out & Job Queue** (`orchestrator.py`, `invoice_extractor.py`) | Thread-offloaded sync `httpx.Client` + in-memory session dict | Migrate to `httpx.AsyncClient(http2=True)` connection pooling + **Redis ARQ / Celery** distributed worker queues with Redis Pub/Sub SSE streaming | True horizontal scaling across multiple FastAPI replicas |
+| **5. Gemini Tier-1 Concurrency & Caching** (`gemini_fallback.py`, `doc_analyzer.py`) | Free-tier sequential pacing & per-request prompt dispatch | Lift Free-Tier `15 RPM` throttling on Tier-1/Vertex AI keys with async token-bucket concurrency, **Gemini Context Caching** for repeated prompts, and **Batch API** for bulk offline jobs | **4–10× faster** multi-batch fallback & **50% lower** batch token cost |
+| **6. Database & Auth Persistence** (`api_server.py`, `usage_tracker.py`, `supabase_client.py`) | Local SQLite (`careguide_system.db`) + REST batch inserts | Run multi-worker **Gunicorn + Uvicorn**, move SQLite tables to **PostgreSQL (`asyncpg` + PgBouncer)**, and use bulk `COPY` / `executemany` upserts to Supabase | Eliminates SQLite write lock contention under heavy concurrent load |
+
+<details>
+<summary><b>Click to expand: Recommended Production Deployment Stack Blueprint</b></summary>
+
+```text
+[Vercel / CDN Edge] (React + White Glassmorphism UI)
+        │ HTTPS / HTTP2
+        ▼
+[NGINX / Caddy Load Balancer] ──► [Gunicorn + N× Uvicorn Workers (api_server.py)]
+                                        │
+        ┌───────────────────────────────┼───────────────────────────────┐
+        ▼                               ▼                               ▼
+[Redis Cluster / Sentinel]     [ARQ / Celery Workers]        [PostgreSQL + PgBouncer]
+ • SHA-256 OCR page cache       • ProcessPool (200 DPI)       • Normalized invoices
+ • OTP rate-limits & locks      • Async httpx HTTP/2 pool     • Usage & cost ledger
+ • Live SSE Pub/Sub bus         • Parallel Tier-1 Gemini      • Security audit events
+                                        │
+                                        ▼ Tailscale WireGuard Mesh (P2P)
+                               [vLLM / Triton Multi-GPU Cluster]
+                                • baidu/Unlimited-OCR (FP8/BF16)
+```
+
+</details>
+
+---
+
 ## 📜 License & Credits
 
 * **Architecture & Development**: [Sifat Khan](https://github.com/Sifatkhan-1915020) (KUET Biomedical Engineering).
