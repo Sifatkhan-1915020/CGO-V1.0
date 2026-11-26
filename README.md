@@ -15,7 +15,7 @@
 [![Swagger](https://img.shields.io/badge/Swagger-OpenAPI_3.1-85EA2D.svg?style=for-the-badge&logo=swagger&logoColor=black)](https://ocr-project-puce.vercel.app/docs)
 [![Demo Video](https://img.shields.io/badge/Demo_Video-720p_HD-FF0000.svg?style=for-the-badge&logo=youtube&logoColor=white)](#-end-to-end-system-walkthrough-video-demo)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
-[![UI Style](https://img.shields.io/badge/Design-Apple_Dark_Minimalist-000000.svg?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/Sifatkhan-1915020/CGO-V1.0)
+[![UI Style](https://img.shields.io/badge/Design-White_Glassmorphism_%2B_Dark_Landing-0f172a.svg?style=for-the-badge&logo=react&logoColor=white)](https://github.com/Sifatkhan-1915020/CGO-V1.0)
 
 <br/>
 
@@ -25,7 +25,7 @@
 <br/>
 
 <p align="center">
-  <b>CG-OCR</b> is an enterprise-grade, memory-bounded document, spreadsheet, and invoice processing system built for high throughput. It couples deterministic sub-15ms digital triage (0 token cost) with <b>Baidu/Unlimited-OCR GPU acceleration</b>, <b>Gemini Vision AI fallback for complex tabular and multilingual typography</b>, zero-trust <b>Anti-Bot OTP Guard security</b>, <b>Redis 7.2 fast-buffers</b>, and <b>Prometheus/Grafana live observability</b>.
+  <b>CG-OCR</b> is an enterprise-grade, memory-bounded document, spreadsheet, and invoice intelligence platform. It routes tabular spreadsheets (XLSX/CSV/TSV) through a <b>deterministic sub-15ms fast-path (0 token cost)</b>, renders all PDFs and images through <b>Baidu/Unlimited-OCR GPU acceleration</b> with <b>whole-batch Gemini Vision AI fallback (&lt;85% confidence)</b>, provides <b>1-call AI Summary &amp; Q&amp;A</b>, enforces <b>Anti-Bot OTP Guard security</b>, and streams <b>real-time Redis, Prometheus/Grafana, and Gemini Token Cost telemetry</b>.
 </p>
 
 <p align="center">
@@ -144,8 +144,8 @@ Explore the live functional modules of the CG-OCR Enterprise platform below. Eac
 
 <br/><br/>
 
-### 9. Infrastructure Telemetry & Redis / Grafana Hub
-*Live system observability suite with real-time HTTP throughput (RPS), sub-15ms P95 latency curves, host CPU utilization, Redis hit ratio (98.6%), and one-click Grafana dashboard export.*
+### 9. Infrastructure Telemetry, Token Cost & Redis / Grafana Hub
+*Compact white-glassmorphism observability suite (`Inter` typography) showing real-time HTTP throughput (RPS), real P95 latency, `psutil` CPU/RSS curves, live Redis `INFO`/`SCAN` metrics, and SQLite-persisted Gemini **API Calls & Token Cost** telemetry.*
 
 <img src="docs/screenshots/09_infrastructure_observability.jpg" alt="Grafana Telemetry & Redis Observability Hub" width="95%" style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 12px 35px rgba(0,0,0,0.85);" />
 
@@ -158,30 +158,31 @@ Explore the live functional modules of the CG-OCR Enterprise platform below. Eac
 ### 1. End-to-End Ingestion & Dual-Route Extraction Engine
 ```mermaid
 flowchart TD
-    A["User Upload (PDF, Invoices, XLSX, CSV, TSV, Images)"] --> B{"Magic-Byte Pre-Filter & Sanitizer"}
+    A["User Upload (PDF, Invoices, XLSX, CSV, TSV, Images)"] --> B{"Format Router & Magic-Byte Check"}
     
-    %% Fast Path (Deterministic)
-    B -->|"Digital Vector PDF / Spreadsheet"| C["Deterministic Fast-Path (<15ms)"]
-    C --> D["PyMuPDF / openpyxl / csv.Sniffer"]
+    %% Fast Path (Deterministic Spreadsheets)
+    B -->|"Tabular Ledger (XLSX, XLS, CSV, TSV, TXT)"| C["Deterministic Fast-Path (<15ms)"]
+    C --> D["openpyxl / csv.Sniffer"]
     D -->|"0 Token Burn"| J["Structured Extracted Text & Tables"]
     
-    %% Heavy Path (Scanned Invoices / Media)
-    B -->|"Scanned Document / Raster Image"| E["OpenCV Preprocessor (cv2.INTER_AREA Max 1600px)"]
+    %% Visual OCR Path (All PDFs + Raster Images)
+    B -->|"PDF (200 DPI Render) / Raster Image"| E["OpenCV Preprocessor (cv2.INTER_AREA Max 1600px)"]
     E --> F["20-Element Sliding Epoch Batcher"]
-    F --> G["Baidu/Unlimited-OCR (Kaggle/Colab Dual-GPU)"]
+    F --> G["Baidu/Unlimited-OCR (Kaggle/Colab GPU)"]
     
-    %% Quality Gate & AI Fallback
-    G --> H{"Confidence < 85% OR Bengali Text?"}
-    H -->|"Yes (<0.85 / বাংলা)"| I["Gemini Vision AI (20-Item Packet Fallback)"]
-    H -->|"No (>= 0.85 Clean)"| J
+    %% Quality Gate & Whole-Batch AI Fallback
+    G --> H{"Batch Conf < 85% OR Bangla OR Error?"}
+    H -->|"Yes (Whole Batch) or Manual Re-OCR"| I["Gemini Vision AI (Multi-Image Packet)"]
+    H -->|"No (>= 85% Clean)"| J
     I --> J
     
-    %% Financial Audit & Data Persistence
-    J --> K["Task 3 Invoice Validation Audit (Math Balancing)"]
-    K --> L["Redis Telemetry Fast-Buffer (<0.2ms)"]
-    L --> M["Supabase PostgreSQL Cloud DB (Auto-Sync)"]
-    L --> N["Prometheus Exporter (/metrics)"]
-    N --> O["Grafana Live Telemetry Dashboard"]
+    %% Downstream AI Intelligence, Audit & Telemetry
+    J --> K["Gemini Invoice Audit (Math Balancing)"]
+    J --> Q["AI Summary & Q&A Engine (1 Call / Query)"]
+    K --> L["Live Redis Cache & Keyspace Scanner"]
+    K --> M["Supabase PostgreSQL Cloud DB (Auto-Sync)"]
+    L --> N["Prometheus Exporter (/metrics) & Token Tracker"]
+    N --> O["Grafana Live Dashboard & Cost Breakdown"]
     K --> P["Excel (.xlsx) / JSON Report / ZIP Exporter"]
 ```
 
@@ -262,35 +263,37 @@ flowchart LR
 <table>
   <tr>
     <td width="50%">
-      <h3>Deterministic Fast-Path (&lt;15ms)</h3>
-      <p>Digital vector PDFs, spreadsheets (XLSX, XLS), and delimited files (CSV, TSV) completely bypass heavy deep-learning networks. Structured text and tabular schemas are extracted in sub-15ms with <b>0 token consumption</b>.</p>
+      <h3>Spreadsheet Fast-Path (&lt;15ms)</h3>
+      <p>Tabular spreadsheets (<code>XLSX</code>, <code>XLS</code>, <code>CSV</code>, <code>TSV</code>) and <code>TXT</code> files bypass OCR networks completely via deterministic parsing in sub-15ms with <b>0 token consumption</b>.</p>
     </td>
     <td width="50%">
-      <h3>Baidu/Unlimited-OCR Acceleration</h3>
-      <p>Processes dense scanned media using a 3B vision-language architecture with Reference Sliding Window Attention running on Kaggle/Colab Dual T4 GPUs. Tunnelled securely via <b>Tailscale WireGuard Mesh</b> (recommended for direct P2P encryption & unlimited timeouts) or <b>Cloudflare Quick Tunnel</b>.</p>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%">
-      <h3>Gemini Vision AI Fallback</h3>
-      <p>When line confidence scores drop below 85% or Bengali (<code>বাংলা</code>) typographic complexity is detected, batches are multiplexed into <b>20-element sliding packets</b> and routed to Gemini Vision AI for 98.4% accuracy recovery.</p>
-    </td>
-    <td width="50%">
-      <h3>Adaptive Downscaling & Compression</h3>
-      <p>Images larger than 1600px are automatically normalized via <code>cv2.INTER_AREA</code> downsampling and high-efficiency JPEG compression, slashing network transmission payload by <b>~90%</b> (~250 KB vs 2.5 MB) with zero legibility penalty.</p>
+      <h3>PDF &rarr; Baidu Unlimited-OCR GPU</h3>
+      <p>Every PDF page (200 DPI) and raster image is routed directly to <b>Baidu Unlimited-OCR</b> on Kaggle/Colab GPUs—eliminating corrupted embedded PDF font artifacts—over <b>Tailscale WireGuard Mesh</b> or <b>Cloudflare Tunnel</b>.</p>
     </td>
   </tr>
   <tr>
     <td width="50%">
-      <h3>Redis Telemetry & Fast-Buffer</h3>
-      <p>Engineered for high-concurrency caching with seamless failover to an embedded Redis 7.2-compatible cache. Achieves sub-0.2ms round-trip latency for session handling, OTP anti-replay guards, and document hash deduplication.</p>
+      <h3>Whole-Batch Gemini Fallback &amp; Re-OCR</h3>
+      <p>Whenever batch confidence drops below <b>85%</b> or Bengali (<code>বাংলা</code>) script appears, the entire batch automatically escalates to <b>Gemini Vision AI</b>. Operators can also trigger 1-click <b>Re-OCR Page</b> or <b>Re-OCR Doc (Gemini)</b> anytime.</p>
     </td>
     <td width="50%">
-      <h3>Grafana & Prometheus Observability</h3>
-      <p>Native OpenMetrics exporter exposed at <code>/metrics</code>. Feeds live telemetry directly into Prometheus and Grafana dashboards, monitoring real-time request rates, P95 latency distributions, CPU/RAM utilization, and security event triggers.</p>
+      <h3>1-Call AI Summary &amp; Q&amp;A</h3>
+      <p>Synthesizes executive summaries or answers targeted questions directly over extracted PDFs, images, and spreadsheet rows via <code>/api/documents/analyze</code> using strictly <b>1 Gemini API call per query</b>.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <h3>Real-Time Redis &amp; Grafana Telemetry</h3>
+      <p>Live HTTP request sliding-window collector tracks actual RPS, P95 latency, error rate, and <code>psutil</code> CPU/RAM across 5s buckets, alongside live Redis <code>PING</code>/<code>INFO</code>/<code>SCAN</code> inspection and honest offline fallback.</p>
+    </td>
+    <td width="50%">
+      <h3>API Call &amp; Token Cost Accounting</h3>
+      <p>SQLite-persisted <code>UsageTracker</code> captures exact Gemini <code>usageMetadata</code> token counts (prompt + output) and estimated USD cost per module, exporting Prometheus gauges (<code>cg_gemini_calls_total</code>, <code>cg_gemini_estimated_cost_usd</code>).</p>
     </td>
   </tr>
 </table>
+
+> **UI Design Architecture:** Preserves an Apple-inspired dark minimalist landing page while delivering an authenticated internal workspace crafted in **compact transparent white glassmorphism** with unified **Inter** typography on a glare-free cool mist backdrop (`#e4ebf3`).
 
 ---
 
@@ -413,9 +416,12 @@ CG-OCR enforces enterprise-grade zero-trust access control with real-time hardwa
    * Tabular ledger files (XLSX, XLS, CSV, TSV).
 3. Expand the **Live Processing Telemetry & System Logs** viewer to monitor real-time worker allocation and memory buffers.
 4. Click **Start OCR Extraction**:
-   * Digital PDFs and tabular sheets finish in `<15ms` using deterministic parsing.
-   * Scanned files are preprocessed (`cv2.INTER_AREA`) and dispatched in 20-page epochs to GPU OCR.
-   * Degraded or handwritten Bengali lines are sent to Gemini Vision AI for high-accuracy fallback.
+   * Tabular sheets (XLSX/CSV/TSV) finish in `<15ms` using deterministic parsing.
+   * All PDF pages (200 DPI) and images are preprocessed (`cv2.INTER_AREA`) and dispatched in 20-page epochs to **Baidu Unlimited-OCR** (Kaggle GPU).
+   * If confidence is `<85%`, Bangla text is present, or OCR errors occur, the **whole batch** automatically routes to **Gemini Vision AI**.
+   * Need cleaner output on any page? Click **Re-OCR Page (Gemini)** or **Re-OCR Doc (Gemini)** inside the Extracted Documents viewer.
+5. **AI Summary & Q&A (1 Call per Query)**:
+   * Click **Summary** for an instant executive brief over all extracted sheets/PDFs, or enter any specific question in the Q&A bar (powered by `DocumentAnalyzer` in strictly 1 Gemini API call).
 
 ### 5. Reviewing Invoice Audits & Mathematical Validation
 1. Upon extraction completion, navigate to the **Task 3: Invoices & Data Validation Audit** tab.
@@ -430,11 +436,13 @@ CG-OCR enforces enterprise-grade zero-trust access control with real-time hardwa
 * **Save to Supabase**: Auto-commit records to 6 normalized PostgreSQL tables (`documents`, `invoices`, `invoice_items`, `rules`, `logs`, `stats`).
 * **JSON Report & ZIP**: Download machine-readable audit reports or complete file bundles for downstream ETL pipelines.
 
-### 7. Telemetry, Threat Monitoring & Team Chat
+### 7. Telemetry, Token Cost, Threat Monitoring & Team Chat
 * **Status & Security Tab**:
   * Review live health across Backend, GPU Worker, Gemini AI, Supabase, Redis, and Grafana.
-  * Inspect the **Flagged Unauthorized Login Attempts** table to investigate blocked intrusion attempts with real IP and device fingerprints.
-  * Execute live Redis latency tests (<0.2ms) and export the Grafana dashboard JSON.
+  * Inspect **Redis & Grafana Telemetry** powered by real HTTP request sliding buckets (RPS, P95 latency, error rate), `psutil` CPU/memory, and live Redis `INFO` / keyspace scans.
+  * Monitor **API Calls & Token Cost**: live cumulative call counts, prompt/output tokens, estimated USD cost, and module-level breakdown across AI Summary & Q&A, Invoice Extraction, Gemini OCR Fallback, Manual Re-OCR, and Baidu OCR.
+  * Inspect the **Flagged Login Attempts** table to investigate blocked intrusion attempts with real IP and device fingerprints.
+  * Execute live Redis latency tests and export the Grafana dashboard JSON.
 * **Team Chat Tab**:
   * Exchange real-time, persistent messages and audit notes with team members across the workspace.
 
@@ -542,7 +550,9 @@ npm --prefix frontend run dev
 | `GET` | `/api/telemetry/redis` | Redis memory, hit ratio, latency, and namespaces | Public |
 | `POST` | `/api/telemetry/redis/ping` | Live Redis PING round-trip verification | Public |
 | `POST` | `/api/telemetry/redis/test` | Live Redis key write & read verification | Public |
-| `GET` | `/api/telemetry/grafana` | Real-time timeseries curves (RPS, Latency, CPU, RAM) | Public |
+| `GET` | `/api/telemetry/grafana` | Real-time timeseries (RPS, P95 Latency, CPU, RAM) + usage stats | Public |
+| `GET` | `/api/telemetry/usage` | Real-time Gemini token usage, USD cost, and call breakdown | Public |
+| `POST` | `/api/telemetry/usage/reset` | Reset stored API call & token usage counters | Public |
 | `GET` | `/api/telemetry/grafana/export` | Download ready-to-import Grafana dashboard JSON | Public |
 | `GET` | `/api/auth/employees` | Retrieve authorized employee email whitelist | Admin |
 | `POST` | `/api/auth/employees` | Authorize new employee email address | Admin |
@@ -550,7 +560,10 @@ npm --prefix frontend run dev
 | `POST` | `/api/auth/request-otp` | Request 6-digit OTP code (OTP Guard Protected) | Public |
 | `POST` | `/api/auth/verify-otp` | Verify 6-digit OTP and issue session token | Public |
 | `GET` | `/api/security/events` | Retrieve real-time security intrusion audit events | Employee / Admin |
-| `POST` | `/api/extract` | Multi-format document extraction execution | Session Token |
+| `POST` | `/api/extract` | Multi-format document & OCR extraction execution | Session Token |
+| `POST` | `/api/ocr/reextract-gemini` | Manually re-OCR a cached page or document via Gemini | Session Token |
+| `POST` | `/api/ocr/reextract-gemini-upload` | Manually re-OCR an uploaded file/page via Gemini | Session Token |
+| `POST` | `/api/documents/analyze` | 1-call Gemini AI Summary & specific Q&A over extracted docs | Session Token |
 | `POST` | `/api/supabase/save/invoices` | Persist validated invoices to Supabase PostgreSQL | Session Token |
 | `GET` | `/api/chat/messages` | Fetch persistent team collaboration messages | Session Token |
 | `POST` | `/api/chat/messages` | Post new message to employee collaboration channel | Session Token |
